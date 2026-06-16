@@ -288,3 +288,12 @@ body{margin:0;background:var(--bg);}
 .ann-tag-daishin{background:#2563EB;}
 .ann-tag-nenkyu{background:#16A34A;}
 .ann-ev-deleted .ann-tag-daishin,.ann-ev-deleted .ann-tag-nenkyu{text-decoration:line-through;}
+
+/* 月見出しの特別日サマリー（日曜診療・代診・計画年休) */
+.ann-month-head{flex-wrap:wrap;}
+.ann-mh-sum{display:flex;flex-wrap:wrap;gap:4px 10px;flex-basis:100%;margin-top:4px;}
+.ann-mh-item{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;
+  color:var(--ink-soft);font-variant-numeric:tabular-nums;}
+.ann-mh-item .ann-clinic-tag,
+.ann-mh-item .ann-tag-daishin,
+.ann-mh-item .ann-tag-nenkyu{font-size:9px;padding:1px 5px;margin-top:0;}

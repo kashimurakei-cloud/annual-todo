@@ -146,11 +146,15 @@ function normalize(raw) {
     const months = {};
     for (let m = 1; m <= 12; m++) {
       const list = (src.months && src.months[m]) || [];
-      months[m] = sortByDate(list.map(cleanEvent));
+      months[m] = sortByDate(
+        list.map(cleanEvent).filter((e) => !(e.auto && e.text === "日曜診療"))
+      );
     }
     years[Number(y)] = {
       months,
-      nextYear: sortByDate((src.nextYear || []).map(cleanEvent)),
+      nextYear: sortByDate(
+        (src.nextYear || []).map(cleanEvent).filter((e) => !(e.auto && e.text === "日曜診療"))
+      ),
     };
   }
   const yearOrder = (raw.yearOrder || Object.keys(years).map(Number))
@@ -339,16 +343,14 @@ export default function App() {
         for (let i = list.length - 1; i >= 0; i--) {
           if (list[i].auto && list[i].calDay === key) list.splice(i, 1);
         }
-        const dow = new Date(yr, m - 1, day).getDay();
-        let autoText = null, clinic = false, tag = "";
-        if (state === "open" && dow === 0) { autoText = "日曜診療"; clinic = true; }
-        else if (state === "daishin") { autoText = "代診"; tag = "daishin"; }
+        let autoText = null, tag = "";
+        if (state === "daishin") { autoText = "代診"; tag = "daishin"; }
         else if (state === "nenkyu") { autoText = "計画年休"; tag = "nenkyu"; }
         if (autoText) {
           const dd = `${String(m).padStart(2, "0")}/${String(day).padStart(2, "0")}`;
           list.push({
             id: uid(), importance: "", date: dd, text: autoText,
-            author: "", clinic, tag, createdAt: Date.now(), auto: true, calDay: key,
+            author: "", tag, createdAt: Date.now(), auto: true, calDay: key,
           });
           sortByDate(list);
         }
@@ -478,8 +480,6 @@ export default function App() {
         </div>
       </header>
 
-      <ClinicSummary yd={yd} year={activeYear} />
-
       {view === "cal" && (
         <CalendarView
           yd={yd}
@@ -502,6 +502,7 @@ export default function App() {
                 <span className="ann-month-jp">{m.n}月</span>
                 <span className="ann-month-en">{m.en}</span>
                 {isCur && <span className="ann-now">今月</span>}
+                <MonthSpecials cal={data.cal || {}} year={activeYear} m={m.n} />
               </div>
               <div className="ann-events">
                 {list.length === 0 && <div className="ann-empty">—</div>}
@@ -807,6 +808,39 @@ function CalPicker({ year, m, day, current, onSelect, onClose }) {
   );
 }
 
+
+function MonthSpecials({ cal, year, m }) {
+  const dim = new Date(year, m, 0).getDate();
+  const sun = [], dai = [], nen = [];
+  for (let d = 1; d <= dim; d++) {
+    const s = calState(cal, year, m, d);
+    const dow = new Date(year, m - 1, d).getDay();
+    if (s === "open" && dow === 0) sun.push(d);
+    else if (s === "daishin") dai.push(d);
+    else if (s === "nenkyu") nen.push(d);
+  }
+  if (!sun.length && !dai.length && !nen.length) return null;
+  const fmt = (arr) => arr.map((d) => `${m}/${d}`).join("・");
+  return (
+    <span className="ann-mh-sum">
+      {sun.length > 0 && (
+        <span className="ann-mh-item">
+          <span className="ann-clinic-tag">🏥診</span>{fmt(sun)}
+        </span>
+      )}
+      {dai.length > 0 && (
+        <span className="ann-mh-item">
+          <span className="ann-tag-daishin">🩺代診</span>{fmt(dai)}
+        </span>
+      )}
+      {nen.length > 0 && (
+        <span className="ann-mh-item">
+          <span className="ann-tag-nenkyu">🏖年休</span>{fmt(nen)}
+        </span>
+      )}
+    </span>
+  );
+}
 
 function ClinicSummary({ yd, year }) {
   const days = [];
