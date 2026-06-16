@@ -147,13 +147,13 @@ function normalize(raw) {
     for (let m = 1; m <= 12; m++) {
       const list = (src.months && src.months[m]) || [];
       months[m] = sortByDate(
-        list.map(cleanEvent).filter((e) => !(e.auto && e.text === "日曜診療"))
+        list.map(cleanEvent).filter((e) => !e.clinic)
       );
     }
     years[Number(y)] = {
       months,
       nextYear: sortByDate(
-        (src.nextYear || []).map(cleanEvent).filter((e) => !(e.auto && e.text === "日曜診療"))
+        (src.nextYear || []).map(cleanEvent).filter((e) => !e.clinic)
       ),
     };
   }
@@ -936,14 +936,6 @@ function Editor({ month, existing, onSave, onSoftDelete, onRestore, onHardDelete
           placeholder="例）ひたちなか歯科医師会総会"
           onChange={(e) => setText(e.target.value)}
         />
-
-        <button
-          className={"ann-clinic-toggle" + (clinic ? " is-on" : "")}
-          onClick={() => setClinic((v) => !v)}
-        >
-          <span className="ann-clinic-check">{clinic ? "✓" : ""}</span>
-          🏥 日曜診療日にする
-        </button>
 
         <div className="ann-modal-actions">
           {onSoftDelete && (
