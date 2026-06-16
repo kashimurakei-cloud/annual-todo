@@ -281,3 +281,10 @@ body{margin:0;background:var(--bg);}
 .ann-state.st-daishin .ann-state-sw{background:#2563EB;border-color:#2563EB;}
 .ann-state-now{margin-left:auto;font-size:10px;font-weight:800;color:var(--teal-d);
   background:#D6F0EA;padding:2px 8px;border-radius:999px;}
+
+/* 代診・計画年休のチップ */
+.ann-tag-daishin,.ann-tag-nenkyu{flex:none;font-size:10px;font-weight:800;color:#fff;
+  padding:2px 7px;border-radius:6px;margin-top:1px;white-space:nowrap;}
+.ann-tag-daishin{background:#2563EB;}
+.ann-tag-nenkyu{background:#16A34A;}
+.ann-ev-deleted .ann-tag-daishin,.ann-ev-deleted .ann-tag-nenkyu{text-decoration:line-through;}

@@ -74,8 +74,55 @@ const DAY_STATES = [
   { key: "daishin", label: "代診", cls: "st-daishin" },
 ];
 const dayStateOf = (k) => DAY_STATES.find((s) => s.key === k);
-// 日曜・月曜はデフォルト休診、それ以外は診療
+// 日本の祝日（振替休日・国民の休日を含む)。年ごとにキャッシュ
+const _holCache = {};
+function computeJpHolidays(year) {
+  const set = new Set();
+  const add = (m, d) => set.add(`${m}-${d}`);
+  const dow = (m, d) => new Date(year, m - 1, d).getDay();
+  const nthMonday = (month, n) => {
+    const w = new Date(year, month - 1, 1).getDay();
+    return 1 + ((1 - w + 7) % 7) + (n - 1) * 7;
+  };
+  add(1, 1); add(2, 11); add(2, 23); add(4, 29); add(5, 3); add(5, 4); add(5, 5);
+  add(8, 11); add(11, 3); add(11, 23);
+  add(1, nthMonday(1, 2)); add(7, nthMonday(7, 3));
+  add(9, nthMonday(9, 3)); add(10, nthMonday(10, 2));
+  const k = year - 1980;
+  add(3, Math.floor(20.8431 + 0.242194 * k - Math.floor(k / 4)));
+  add(9, Math.floor(23.2488 + 0.242194 * k - Math.floor(k / 4)));
+  const base = new Set(set);
+  // 国民の休日（前後が祝日で、本人は祝日でも日曜でもない)
+  for (let m = 1; m <= 12; m++) {
+    const dim = new Date(year, m, 0).getDate();
+    for (let d = 1; d <= dim; d++) {
+      if (base.has(`${m}-${d}`) || dow(m, d) === 0) continue;
+      const prev = new Date(year, m - 1, d - 1);
+      const next = new Date(year, m - 1, d + 1);
+      if (base.has(`${prev.getMonth() + 1}-${prev.getDate()}`) &&
+          base.has(`${next.getMonth() + 1}-${next.getDate()}`)) set.add(`${m}-${d}`);
+    }
+  }
+  // 振替休日（祝日が日曜なら、次の祝日でない日)
+  for (const key of base) {
+    const [m, d] = key.split("-").map(Number);
+    if (dow(m, d) === 0) {
+      let cur = new Date(year, m - 1, d + 1);
+      while (set.has(`${cur.getMonth() + 1}-${cur.getDate()}`))
+        cur = new Date(cur.getFullYear(), cur.getMonth(), cur.getDate() + 1);
+      if (cur.getFullYear() === year) set.add(`${cur.getMonth() + 1}-${cur.getDate()}`);
+    }
+  }
+  return set;
+}
+function isJpHoliday(year, m, day) {
+  if (!_holCache[year]) _holCache[year] = computeJpHolidays(year);
+  return _holCache[year].has(`${m}-${day}`);
+}
+
+// 日曜・月曜はデフォルト休診、祝日はデフォルト祝日、それ以外は診療
 function defaultDayState(year, m, day) {
+  if (isJpHoliday(year, m, day)) return "holiday";
   const dow = new Date(year, m - 1, day).getDay();
   return dow === 0 || dow === 1 ? "off" : "open";
 }
@@ -123,6 +170,8 @@ function cleanEvent(e) {
     createdAt: e.createdAt || 0,
   };
   if (e.deletedAt) o.deletedAt = e.deletedAt;
+  if (e.auto) { o.auto = true; o.calDay = e.calDay || ""; }
+  if (e.tag) o.tag = e.tag;
   return o;
 }
 
@@ -272,7 +321,8 @@ export default function App() {
     setEditor(null);
   };
 
-  // カレンダーの日の区分を設定（デフォルトと同じなら保存しない)
+  // カレンダーの日の区分を設定（デフォルトと同じなら保存しない)。
+  // 日曜診療・代診・計画年休は予定リストへ自動反映
   const setDayState = (yr, m, day, state) => {
     update((d) => {
       d.cal = d.cal || {};
@@ -280,6 +330,29 @@ export default function App() {
       const key = `${m}-${day}`;
       if (state === defaultDayState(yr, m, day)) delete d.cal[yr][key];
       else d.cal[yr][key] = state;
+
+      // 予定リストへの自動反映
+      const yearData = d.years[yr];
+      if (yearData) {
+        const list = yearData.months[m];
+        // この日の自動エントリを一旦削除
+        for (let i = list.length - 1; i >= 0; i--) {
+          if (list[i].auto && list[i].calDay === key) list.splice(i, 1);
+        }
+        const dow = new Date(yr, m - 1, day).getDay();
+        let autoText = null, clinic = false, tag = "";
+        if (state === "open" && dow === 0) { autoText = "日曜診療"; clinic = true; }
+        else if (state === "daishin") { autoText = "代診"; tag = "daishin"; }
+        else if (state === "nenkyu") { autoText = "計画年休"; tag = "nenkyu"; }
+        if (autoText) {
+          const dd = `${String(m).padStart(2, "0")}/${String(day).padStart(2, "0")}`;
+          list.push({
+            id: uid(), importance: "", date: dd, text: autoText,
+            author: "", clinic, tag, createdAt: Date.now(), auto: true, calDay: key,
+          });
+          sortByDate(list);
+        }
+      }
     });
   };
 
@@ -553,6 +626,8 @@ function EventRow({ e, onClick, wide, myName, year, added, onCalMark, onCalUnmar
     <div className={cls}>
       <button className="ann-ev-main" onClick={onClick}>
         {e.clinic && <span className="ann-clinic-tag" title="日曜診療日">🏥診</span>}
+        {e.tag === "daishin" && <span className="ann-tag-daishin">🩺代診</span>}
+        {e.tag === "nenkyu" && <span className="ann-tag-nenkyu">🏖年休</span>}
         {lv ? (
           <span className="ann-badge" style={{ background: lv.bg, color: lv.color }}>
             {lv.label}
