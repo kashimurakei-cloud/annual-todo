@@ -61,7 +61,16 @@ function initialData() {
     years: {
       2026: emptyYear(), 2027: emptyYear(), 2028: emptyYear(), 2029: emptyYear(),
     },
+    cal: {},
   };
+}
+
+// カレンダーの診療(on)/休診(off)。日曜はデフォルト休診、それ以外はデフォルト診療
+function calOff(cal, year, m, day) {
+  const dow = new Date(year, m - 1, day).getDay();
+  const def = dow === 0 ? "off" : "on";
+  const v = cal && cal[year] && cal[year][`${m}-${day}`];
+  return (v ?? def) === "off";
 }
 
 const dateOrder = (d) => {
@@ -89,7 +98,7 @@ function normalize(raw) {
   const yearOrder = (raw.yearOrder || Object.keys(years).map(Number))
     .map(Number)
     .sort((a, b) => a - b);
-  return { yearOrder, years };
+  return { yearOrder, years, cal: raw.cal || {} };
 }
 
 function cleanEvent(e) {
@@ -127,6 +136,8 @@ export default function App() {
   const [data, setData] = useState(null);
   const [activeYear, setActiveYear] = useState(new Date().getFullYear());
   const [filter, setFilter] = useState(null);
+  const [view, setView] = useState("list"); // "list" | "cal"
+  const [pendingScroll, setPendingScroll] = useState(null);
   const [editor, setEditor] = useState(null);
   const [synced, setSynced] = useState(false);
   const [myName, setMyName] = useState(() => localStorage.getItem(NAME_KEY) || "");
@@ -204,6 +215,14 @@ export default function App() {
     setShowName(false);
   };
 
+  useEffect(() => {
+    if (view === "list" && pendingScroll != null) {
+      const el = document.getElementById("ann-m" + pendingScroll);
+      if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+      setPendingScroll(null);
+    }
+  }, [view, pendingScroll]);
+
   if (!data) {
     return (
       <div className="ann-root">
@@ -240,6 +259,20 @@ export default function App() {
     });
     setEditor(null);
   };
+
+  // カレンダーの「診療/休み」を切り替え（dow: 0=日)
+  const toggleCalDay = (yr, mmdd, dow) => {
+    update((d) => {
+      d.cal = d.cal || {};
+      d.cal[yr] = d.cal[yr] || {};
+      const def = dow === 0 ? "off" : "on";
+      const cur = d.cal[yr][mmdd] ?? def;
+      d.cal[yr][mmdd] = cur === "off" ? "on" : "off";
+    });
+  };
+
+  // カレンダーの日付からリスト表示の月へジャンプ
+  const jumpToMonth = (m) => { setView("list"); setPendingScroll(m); };
 
   // 取り消し線（ソフト削除）
   const softDelete = (month, id) => {
@@ -318,6 +351,21 @@ export default function App() {
           </button>
         </div>
 
+        <div className="ann-viewtabs">
+          <button
+            className={"ann-viewtab" + (view === "list" ? " is-on" : "")}
+            onClick={() => setView("list")}
+          >
+            リスト
+          </button>
+          <button
+            className={"ann-viewtab" + (view === "cal" ? " is-on" : "")}
+            onClick={() => setView("cal")}
+          >
+            カレンダー
+          </button>
+        </div>
+
         <div className="ann-legend">
           <button
             className={"ann-chip ann-chip-all" + (filter === null ? " is-on" : "")}
@@ -347,12 +395,24 @@ export default function App() {
 
       <ClinicSummary yd={yd} year={activeYear} />
 
+      {view === "cal" && (
+        <CalendarView
+          yd={yd}
+          year={activeYear}
+          cal={data.cal || {}}
+          onToggle={toggleCalDay}
+          onJump={jumpToMonth}
+        />
+      )}
+
+      {view === "list" && (
+      <>
       <div className="ann-grid">
         {MONTHS.map((m) => {
           const list = visible(yd.months[m.n]);
           const isCur = activeYear === curYear && m.n === curMonth;
           return (
-            <section key={m.n} className={"ann-month" + (isCur ? " is-current" : "")}>
+            <section key={m.n} id={"ann-m" + m.n} className={"ann-month" + (isCur ? " is-current" : "")}>
               <div className="ann-month-head">
                 <span className="ann-month-jp">{m.n}月</span>
                 <span className="ann-month-en">{m.en}</span>
@@ -397,6 +457,8 @@ export default function App() {
           ＋ 追加
         </button>
       </section>
+      </>
+      )}
 
       {editor && (
         <Editor
@@ -516,6 +578,93 @@ function EventRow({ e, onClick, wide, myName, year, added, onCalMark, onCalUnmar
         </a>
       ))}
     </div>
+  );
+}
+
+function CalendarView({ yd, year, cal, onToggle, onJump }) {
+  return (
+    <div className="ann-cal-grid">
+      {MONTHS.map((mo) => (
+        <MiniMonth
+          key={mo.n}
+          year={year}
+          m={mo.n}
+          en={mo.en}
+          events={yd.months[mo.n]}
+          cal={cal}
+          onToggle={onToggle}
+          onJump={onJump}
+        />
+      ))}
+    </div>
+  );
+}
+
+function MiniMonth({ year, m, en, events, cal, onToggle, onJump }) {
+  const daysInMonth = new Date(year, m, 0).getDate();
+  const firstDow = new Date(year, m - 1, 1).getDay(); // 0=日
+  const lead = (firstDow + 6) % 7; // 月曜始まりの先頭空白
+
+  // 予定のある日（複数日・連休は各日)
+  const evDays = new Set();
+  for (const e of events) {
+    if (e.deletedAt || !e.date) continue;
+    for (const tok of e.date.match(/(\d{1,2})\D+(\d{1,2})/g) || []) {
+      const mm = tok.match(/(\d{1,2})\D+(\d{1,2})/);
+      if (Number(mm[1]) === m) evDays.add(Number(mm[2]));
+    }
+  }
+
+  let openCount = 0;
+  let offCount = 0;
+  for (let d = 1; d <= daysInMonth; d++) {
+    calOff(cal, year, m, d) ? offCount++ : openCount++;
+  }
+
+  const cells = [];
+  for (let i = 0; i < lead; i++) cells.push(null);
+  for (let d = 1; d <= daysInMonth; d++) cells.push(d);
+
+  const WDH = ["月", "火", "水", "木", "金", "土", "日"];
+
+  return (
+    <section className="ann-mini">
+      <div className="ann-mini-head">
+        <button className="ann-mini-title" onClick={() => onJump(m)} title="この月の予定リストへ">
+          {m}月 <span className="ann-mini-en">{en}</span>
+        </button>
+        <span className="ann-mini-count">
+          診療{openCount}・<span className="off">休{offCount}</span>
+        </span>
+      </div>
+      <div className="ann-mini-grid">
+        {WDH.map((w, i) => (
+          <div key={"h" + i} className={"ann-mini-wd" + (i === 5 ? " sat" : i === 6 ? " sun" : "")}>
+            {w}
+          </div>
+        ))}
+        {cells.map((d, i) => {
+          if (d === null) return <div key={i} className="ann-mini-cell empty" />;
+          const dow = new Date(year, m - 1, d).getDay();
+          const off = calOff(cal, year, m, d);
+          let cc = "ann-mini-cell";
+          if (off) cc += " off";
+          if (dow === 0) cc += " sun";
+          else if (dow === 6) cc += " sat";
+          return (
+            <button
+              key={i}
+              className={cc}
+              onClick={() => onToggle(year, `${m}-${d}`, dow)}
+              title={off ? "休診（クリックで診療に)" : "診療（クリックで休診に)"}
+            >
+              {d}
+              {evDays.has(d) && <span className="ann-mini-dot" />}
+            </button>
+          );
+        })}
+      </div>
+    </section>
   );
 }
 

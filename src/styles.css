@@ -213,3 +213,37 @@ body{margin:0;background:var(--bg);}
 .ann-clinic-check{flex:none;width:20px;height:20px;border-radius:6px;border:2px solid #BCE6CC;
   display:flex;align-items:center;justify-content:center;font-size:13px;color:#fff;}
 .ann-clinic-toggle.is-on .ann-clinic-check{background:#16A34A;border-color:#16A34A;}
+
+/* 表示切り替えタブ（リスト/カレンダー) */
+.ann-viewtabs{display:flex;gap:6px;margin-top:14px;}
+.ann-viewtab{border:1px solid var(--line);background:#fff;color:var(--ink-soft);
+  font-size:13px;font-weight:700;padding:7px 18px;border-radius:999px;cursor:pointer;
+  font-family:inherit;transition:.15s;}
+.ann-viewtab:hover{border-color:var(--teal);color:var(--teal-d);}
+.ann-viewtab.is-on{background:var(--teal);border-color:var(--teal);color:#fff;}
+
+/* カレンダー表示 */
+.ann-cal-grid{max-width:1180px;margin:0 auto;display:grid;gap:14px;
+  grid-template-columns:repeat(auto-fill,minmax(290px,1fr));}
+.ann-mini{background:#fff;border:1px solid var(--line);border-radius:14px;padding:12px;}
+.ann-mini-head{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin-bottom:8px;}
+.ann-mini-title{background:transparent;border:none;font-size:16px;font-weight:800;cursor:pointer;
+  font-family:inherit;color:var(--ink);padding:2px 5px;border-radius:6px;}
+.ann-mini-title:hover{background:#F2F5F6;color:var(--teal-d);}
+.ann-mini-en{font-size:10px;letter-spacing:.16em;color:#9AA6AE;font-weight:700;}
+.ann-mini-count{font-size:12px;font-weight:800;color:var(--teal-d);white-space:nowrap;}
+.ann-mini-count .off{color:#E5484D;}
+.ann-mini-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:3px;}
+.ann-mini-wd{text-align:center;font-size:10px;font-weight:700;color:var(--ink-soft);padding:2px 0;}
+.ann-mini-wd.sat{color:#2D6FE0;}
+.ann-mini-wd.sun{color:#E5484D;}
+.ann-mini-cell{position:relative;aspect-ratio:1/1;border:1px solid #EEF1F3;background:#fff;
+  border-radius:6px;font-size:12px;font-weight:600;color:var(--ink);cursor:pointer;
+  font-family:inherit;display:flex;align-items:center;justify-content:center;transition:.1s;}
+.ann-mini-cell.empty{background:transparent;border:none;cursor:default;}
+.ann-mini-cell:hover:not(.empty){outline:2px solid var(--teal);z-index:1;}
+.ann-mini-cell.off{background:#FDE4E8;border-color:#F6C9D1;}
+.ann-mini-cell.sun{color:#E5484D;}
+.ann-mini-cell.sat{color:#2D6FE0;}
+.ann-mini-dot{position:absolute;bottom:3px;right:3px;width:5px;height:5px;border-radius:50%;
+  background:#C77100;}
