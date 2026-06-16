@@ -44,8 +44,9 @@ function weekdayInfo(dateStr, year) {
 
 let _id = 0;
 const uid = () => `e${Date.now().toString(36)}${(_id++).toString(36)}`;
-const ev = (importance, date, text, author) => ({
-  id: uid(), importance, date, text, author: author || "", createdAt: Date.now(),
+const ev = (importance, date, text, author, clinic) => ({
+  id: uid(), importance, date, text, author: author || "",
+  clinic: !!clinic, createdAt: Date.now(),
 });
 
 const emptyYear = () => {
@@ -98,6 +99,7 @@ function cleanEvent(e) {
     date: e.date || "",
     text: e.text || "",
     author: e.author || "",
+    clinic: !!e.clinic,
     createdAt: e.createdAt || 0,
   };
   if (e.deletedAt) o.deletedAt = e.deletedAt;
@@ -223,16 +225,16 @@ export default function App() {
     setActiveYear(ny);
   };
 
-  const saveEvent = ({ month, id, importance, date, text }) => {
+  const saveEvent = ({ month, id, importance, date, text, clinic }) => {
     if (!text.trim() && !date.trim()) { setEditor(null); return; }
     update((d) => {
       const y = d.years[activeYear];
       const target = month === "next" ? y.nextYear : y.months[month];
       if (id) {
         const i = target.findIndex((e) => e.id === id);
-        if (i >= 0) target[i] = { ...target[i], importance, date, text };
+        if (i >= 0) target[i] = { ...target[i], importance, date, text, clinic: !!clinic };
       } else {
-        target.push(ev(importance, date, text, myName));
+        target.push(ev(importance, date, text, myName, clinic));
       }
       sortByDate(target);
     });
@@ -342,6 +344,8 @@ export default function App() {
           </span>
         </div>
       </header>
+
+      <ClinicSummary yd={yd} year={activeYear} />
 
       <div className="ann-grid">
         {MONTHS.map((m) => {
@@ -459,9 +463,11 @@ function EventRow({ e, onClick, wide, myName, year, added, onCalMark, onCalUnmar
   if (isOther) cls += " ann-ev-other";
   if (isDeleted) cls += " ann-ev-deleted";
   if (isRange) cls += " ann-ev-range";
+  if (e.clinic) cls += " ann-ev-clinic";
   return (
     <div className={cls}>
       <button className="ann-ev-main" onClick={onClick}>
+        {e.clinic && <span className="ann-clinic-tag" title="日曜診療日">🏥診</span>}
         {lv ? (
           <span className="ann-badge" style={{ background: lv.bg, color: lv.color }}>
             {lv.label}
@@ -513,10 +519,38 @@ function EventRow({ e, onClick, wide, myName, year, added, onCalMark, onCalUnmar
   );
 }
 
+function ClinicSummary({ yd, year }) {
+  const days = [];
+  for (let m = 1; m <= 12; m++) {
+    for (const e of yd.months[m]) {
+      if (e.clinic && !e.deletedAt && e.date) days.push(e);
+    }
+  }
+  if (days.length === 0) return null;
+  days.sort((a, b) => dateOrder(a.date) - dateOrder(b.date));
+  return (
+    <div className="ann-clinic-bar">
+      <span className="ann-clinic-ico">🏥</span>
+      <span className="ann-clinic-lbl">{year}年の日曜診療日</span>
+      <span className="ann-clinic-days">
+        {days.map((e) => {
+          const wi = weekdayInfo(e.date, year);
+          return (
+            <span key={e.id} className="ann-clinic-day">
+              {e.date}{wi ? `（${wi.wd}）` : ""}
+            </span>
+          );
+        })}
+      </span>
+    </div>
+  );
+}
+
 function Editor({ month, existing, onSave, onSoftDelete, onRestore, onHardDelete, onClose }) {
   const [importance, setImportance] = useState(existing?.importance ?? "");
   const [date, setDate] = useState(existing?.date ?? "");
   const [text, setText] = useState(existing?.text ?? "");
+  const [clinic, setClinic] = useState(existing?.clinic ?? false);
 
   useEffect(() => {
     const onKey = (e) => e.key === "Escape" && onClose();
@@ -525,7 +559,7 @@ function Editor({ month, existing, onSave, onSoftDelete, onRestore, onHardDelete
   }, [onClose]);
 
   const title = month === "next" ? "来年に向けて" : `${month}月の予定`;
-  const submit = () => onSave({ month, id: existing?.id ?? null, importance, date, text });
+  const submit = () => onSave({ month, id: existing?.id ?? null, importance, date, text, clinic });
   const isDeleted = existing?.deletedAt;
 
   return (
@@ -579,6 +613,14 @@ function Editor({ month, existing, onSave, onSoftDelete, onRestore, onHardDelete
           placeholder="例）ひたちなか歯科医師会総会"
           onChange={(e) => setText(e.target.value)}
         />
+
+        <button
+          className={"ann-clinic-toggle" + (clinic ? " is-on" : "")}
+          onClick={() => setClinic((v) => !v)}
+        >
+          <span className="ann-clinic-check">{clinic ? "✓" : ""}</span>
+          🏥 日曜診療日にする
+        </button>
 
         <div className="ann-modal-actions">
           {onSoftDelete && (
