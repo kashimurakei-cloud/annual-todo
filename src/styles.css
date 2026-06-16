@@ -70,10 +70,15 @@ body{margin:0;background:var(--bg);}
 .ann-events{display:flex;flex-direction:column;gap:5px;flex:1;}
 .ann-empty{color:#C4CCD1;font-size:13px;padding:2px 2px 4px;}
 .ann-empty-wide{padding:10px 2px;}
-.ann-ev{display:flex;align-items:flex-start;gap:7px;width:100%;text-align:left;
-  background:transparent;border:none;border-radius:8px;padding:5px 6px;cursor:pointer;
-  font-family:inherit;transition:.12s;}
+.ann-ev{display:flex;align-items:stretch;gap:2px;width:100%;border-radius:8px;
+  transition:.12s;}
 .ann-ev:hover{background:#F2F5F6;}
+.ann-ev-main{flex:1;min-width:0;display:flex;align-items:flex-start;gap:7px;text-align:left;
+  background:transparent;border:none;border-radius:8px;padding:5px 6px;cursor:pointer;
+  font-family:inherit;}
+.ann-cal{flex:none;align-self:center;text-decoration:none;font-size:14px;line-height:1;
+  padding:5px 6px;border-radius:6px;opacity:.5;transition:.12s;}
+.ann-cal:hover{opacity:1;background:#E1F4F0;}
 .ann-badge{flex:none;font-size:11px;font-weight:800;width:21px;height:21px;border-radius:6px;
   display:flex;align-items:center;justify-content:center;margin-top:1px;}
 .ann-badge-none{background:#EFF2F4;color:#AEB8BF;}
@@ -167,3 +172,7 @@ body{margin:0;background:var(--bg);}
   border:1px dashed #E0A23C;padding:1px 7px;border-radius:6px;margin-top:1px;
   letter-spacing:.04em;white-space:nowrap;}
 .ann-ev-deleted .ann-undated{text-decoration:line-through;}
+
+/* カレンダー追加済みボタン */
+.ann-cal-done{background:transparent;border:none;cursor:pointer;font-family:inherit;opacity:1;}
+.ann-cal-done:hover{background:#FEEBEC;opacity:1;}

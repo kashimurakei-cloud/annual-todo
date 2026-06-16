@@ -11,6 +11,7 @@ import { doc, onSnapshot, setDoc } from "firebase/firestore";
 
 const SHARED_DOC = () => doc(db, "shared", "annualTodo");
 const NAME_KEY = "annualTodo_name";
+const CAL_KEY = "annualTodo_calAdded";
 const DELETE_GRACE_MS = 14 * 24 * 60 * 60 * 1000; // 2週間
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -116,6 +117,17 @@ export default function App() {
   const [synced, setSynced] = useState(false);
   const [myName, setMyName] = useState(() => localStorage.getItem(NAME_KEY) || "");
   const [showName, setShowName] = useState(false);
+  const [calAdded, setCalAdded] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(CAL_KEY) || "{}"); } catch { return {}; }
+  });
+  const setCal = (id, val) => {
+    setCalAdded((prev) => {
+      const next = { ...prev };
+      if (val) next[id] = 1; else delete next[id];
+      localStorage.setItem(CAL_KEY, JSON.stringify(next));
+      return next;
+    });
+  };
   const saveTimer = useRef(null);
   const purgedOnce = useRef(false);
 
@@ -333,7 +345,10 @@ export default function App() {
               <div className="ann-events">
                 {list.length === 0 && <div className="ann-empty">—</div>}
                 {list.map((e) => (
-                  <EventRow key={e.id} e={e} myName={myName}
+                  <EventRow key={e.id} e={e} myName={myName} year={activeYear}
+                    added={!!calAdded[e.id]}
+                    onCalMark={() => setCal(e.id, true)}
+                    onCalUnmark={() => setCal(e.id, false)}
                     onClick={() => setEditor({ month: m.n, id: e.id })} />
                 ))}
               </div>
@@ -355,7 +370,10 @@ export default function App() {
             <div className="ann-empty ann-empty-wide">まだ何もありません</div>
           )}
           {visible(yd.nextYear).map((e) => (
-            <EventRow key={e.id} e={e} myName={myName} wide
+            <EventRow key={e.id} e={e} myName={myName} wide year={activeYear + 1}
+              added={!!calAdded[e.id]}
+              onCalMark={() => setCal(e.id, true)}
+              onCalUnmark={() => setCal(e.id, false)}
               onClick={() => setEditor({ month: "next", id: e.id })} />
           ))}
         </div>
@@ -387,29 +405,73 @@ export default function App() {
   );
 }
 
-function EventRow({ e, onClick, wide, myName }) {
+// Googleカレンダーに追加するためのURL（終日の予定として）
+function gcalUrl(e, year) {
+  const m = String(e.date || "").match(/(\d{1,2})\D+(\d{1,2})/);
+  if (!m) return null;
+  const mo = Number(m[1]);
+  const da = Number(m[2]);
+  const pad = (n) => String(n).padStart(2, "0");
+  const start = `${year}${pad(mo)}${pad(da)}`;
+  const end = new Date(year, mo - 1, da + 1); // 終日は終了日を翌日に
+  const endStr = `${end.getFullYear()}${pad(end.getMonth() + 1)}${pad(end.getDate())}`;
+  const text = encodeURIComponent(e.text || "予定");
+  const details = encodeURIComponent(
+    [
+      e.importance ? `重要度: ${e.importance}` : "",
+      e.author ? `追加: ${e.author}` : "",
+      "（年間やることリストより）",
+    ].filter(Boolean).join("\n")
+  );
+  return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${text}&dates=${start}/${endStr}&details=${details}`;
+}
+
+function EventRow({ e, onClick, wide, myName, year, added, onCalMark, onCalUnmark }) {
   const lv = levelOf(e.importance);
   const isOther = e.author && e.author !== myName;
   const isDeleted = !!e.deletedAt;
+  const cal = !isDeleted && e.date ? gcalUrl(e, year) : null;
   let cls = "ann-ev";
   if (wide) cls += " ann-ev-wide";
   if (isOther) cls += " ann-ev-other";
   if (isDeleted) cls += " ann-ev-deleted";
   return (
-    <button className={cls} onClick={onClick}>
-      {lv ? (
-        <span className="ann-badge" style={{ background: lv.bg, color: lv.color }}>
-          {lv.label}
-        </span>
+    <div className={cls}>
+      <button className="ann-ev-main" onClick={onClick}>
+        {lv ? (
+          <span className="ann-badge" style={{ background: lv.bg, color: lv.color }}>
+            {lv.label}
+          </span>
+        ) : (
+          <span className="ann-badge ann-badge-none">−</span>
+        )}
+        {e.date
+          ? <span className="ann-date">{e.date}</span>
+          : <span className="ann-undated">未定</span>}
+        <span className="ann-text">{e.text}</span>
+        {e.author && <span className="ann-author">{e.author}</span>}
+      </button>
+      {cal && (added ? (
+        <button
+          className="ann-cal ann-cal-done"
+          title="カレンダー追加済み（クリックで解除）"
+          onClick={(ev) => { ev.stopPropagation(); onCalUnmark(); }}
+        >
+          ✅
+        </button>
       ) : (
-        <span className="ann-badge ann-badge-none">−</span>
-      )}
-      {e.date
-        ? <span className="ann-date">{e.date}</span>
-        : <span className="ann-undated">未定</span>}
-      <span className="ann-text">{e.text}</span>
-      {e.author && <span className="ann-author">{e.author}</span>}
-    </button>
+        <a
+          className="ann-cal"
+          href={cal}
+          target="_blank"
+          rel="noopener noreferrer"
+          title="Googleカレンダーに追加"
+          onClick={(ev) => { ev.stopPropagation(); onCalMark(); }}
+        >
+          📅
+        </a>
+      ))}
+    </div>
   );
 }
 
