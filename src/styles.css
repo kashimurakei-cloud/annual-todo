@@ -182,3 +182,7 @@ body{margin:0;background:var(--bg);}
 .ann-wd-sun{color:#E5484D;}
 .ann-wd-sat{color:#2D6FE0;}
 .ann-ev-deleted .ann-wd{text-decoration:line-through;}
+
+/* 連休（複数日)：濃い青の点線で囲む */
+.ann-ev-range{border:2px dotted #1D4ED8;border-radius:8px;padding:1px;background:#F3F7FF;}
+.ann-ev-range:hover{background:#E8F0FF;}

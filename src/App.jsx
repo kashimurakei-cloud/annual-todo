@@ -418,14 +418,23 @@ export default function App() {
 }
 
 // Googleカレンダーに追加するためのURL（終日の予定として）
+// 日付欄に2つ以上の日付があれば「連休（複数日)」とみなす
+const rangeDates = (dateStr) =>
+  String(dateStr || "").match(/(\d{1,2})\D+(\d{1,2})/g) || [];
+const isRangeDate = (dateStr) => rangeDates(dateStr).length >= 2;
+
 function gcalUrl(e, year) {
-  const m = String(e.date || "").match(/(\d{1,2})\D+(\d{1,2})/);
-  if (!m) return null;
-  const mo = Number(m[1]);
-  const da = Number(m[2]);
+  const all = rangeDates(e.date);
+  if (all.length === 0) return null;
+  const parse = (s) => {
+    const m = s.match(/(\d{1,2})\D+(\d{1,2})/);
+    return { mo: Number(m[1]), da: Number(m[2]) };
+  };
+  const a = parse(all[0]);
+  const b = all.length >= 2 ? parse(all[all.length - 1]) : a; // 連休なら最後の日まで
   const pad = (n) => String(n).padStart(2, "0");
-  const start = `${year}${pad(mo)}${pad(da)}`;
-  const end = new Date(year, mo - 1, da + 1); // 終日は終了日を翌日に
+  const start = `${year}${pad(a.mo)}${pad(a.da)}`;
+  const end = new Date(year, b.mo - 1, b.da + 1); // 終日は終了日を翌日に
   const endStr = `${end.getFullYear()}${pad(end.getMonth() + 1)}${pad(end.getDate())}`;
   const text = encodeURIComponent(e.text || "予定");
   const details = encodeURIComponent(
@@ -442,12 +451,14 @@ function EventRow({ e, onClick, wide, myName, year, added, onCalMark, onCalUnmar
   const lv = levelOf(e.importance);
   const isOther = e.author && e.author !== myName;
   const isDeleted = !!e.deletedAt;
+  const isRange = isRangeDate(e.date);
   const cal = !isDeleted && e.date ? gcalUrl(e, year) : null;
-  const wi = e.date ? weekdayInfo(e.date, year) : null;
+  const wi = e.date && !isRange ? weekdayInfo(e.date, year) : null; // 連休のときは曜日を出さない
   let cls = "ann-ev";
   if (wide) cls += " ann-ev-wide";
   if (isOther) cls += " ann-ev-other";
   if (isDeleted) cls += " ann-ev-deleted";
+  if (isRange) cls += " ann-ev-range";
   return (
     <div className={cls}>
       <button className="ann-ev-main" onClick={onClick}>
