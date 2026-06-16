@@ -3,7 +3,7 @@ import { db } from "./firebase";
 import { doc, onSnapshot, setDoc } from "firebase/firestore";
 
 /* ------------------------------------------------------------------ *
- *  年間やることリスト ― Annual To-Do List
+ *  年間予定表 ― Annual To-Do List
  *  ログイン不要・全員で1つのリストを共同編集（リアルタイム同期）
  *  ・削除は取り消し線で残り、2週間後に自動消去（元に戻せる）
  *  ・自分以外が追加した予定は色分け表示
@@ -276,7 +276,7 @@ export default function App() {
         <div className="ann-head-top">
           <div>
             <div className="ann-eyebrow">ANNUAL TO-DO LIST</div>
-            <h1 className="ann-title">年間やることリスト</h1>
+            <h1 className="ann-title">年間予定表</h1>
           </div>
           <div className="ann-head-right">
             <div className="ann-count">
@@ -420,7 +420,7 @@ function gcalUrl(e, year) {
     [
       e.importance ? `重要度: ${e.importance}` : "",
       e.author ? `追加: ${e.author}` : "",
-      "（年間やることリストより）",
+      "（年間予定表より）",
     ].filter(Boolean).join("\n")
   );
   return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${text}&dates=${start}/${endStr}&details=${details}`;
