@@ -65,12 +65,23 @@ function initialData() {
   };
 }
 
-// カレンダーの診療(on)/休診(off)。日曜はデフォルト休診、それ以外はデフォルト診療
-function calOff(cal, year, m, day) {
+// カレンダーの各日の区分
+const DAY_STATES = [
+  { key: "open", label: "診療", cls: "" },
+  { key: "off", label: "休診", cls: "st-off" },
+  { key: "holiday", label: "祝日", cls: "st-holiday" },
+  { key: "nenkyu", label: "計画年休", cls: "st-nenkyu" },
+  { key: "daishin", label: "代診", cls: "st-daishin" },
+];
+const dayStateOf = (k) => DAY_STATES.find((s) => s.key === k);
+// 日曜・月曜はデフォルト休診、それ以外は診療
+function defaultDayState(year, m, day) {
   const dow = new Date(year, m - 1, day).getDay();
-  const def = dow === 0 ? "off" : "on";
+  return dow === 0 || dow === 1 ? "off" : "open";
+}
+function calState(cal, year, m, day) {
   const v = cal && cal[year] && cal[year][`${m}-${day}`];
-  return (v ?? def) === "off";
+  return v || defaultDayState(year, m, day);
 }
 
 const dateOrder = (d) => {
@@ -138,6 +149,7 @@ export default function App() {
   const [filter, setFilter] = useState(null);
   const [view, setView] = useState("list"); // "list" | "cal"
   const [pendingScroll, setPendingScroll] = useState(null);
+  const [calPick, setCalPick] = useState(null); // {m, day}
   const [editor, setEditor] = useState(null);
   const [synced, setSynced] = useState(false);
   const [myName, setMyName] = useState(() => localStorage.getItem(NAME_KEY) || "");
@@ -260,14 +272,14 @@ export default function App() {
     setEditor(null);
   };
 
-  // カレンダーの「診療/休み」を切り替え（dow: 0=日)
-  const toggleCalDay = (yr, mmdd, dow) => {
+  // カレンダーの日の区分を設定（デフォルトと同じなら保存しない)
+  const setDayState = (yr, m, day, state) => {
     update((d) => {
       d.cal = d.cal || {};
       d.cal[yr] = d.cal[yr] || {};
-      const def = dow === 0 ? "off" : "on";
-      const cur = d.cal[yr][mmdd] ?? def;
-      d.cal[yr][mmdd] = cur === "off" ? "on" : "off";
+      const key = `${m}-${day}`;
+      if (state === defaultDayState(yr, m, day)) delete d.cal[yr][key];
+      else d.cal[yr][key] = state;
     });
   };
 
@@ -400,7 +412,7 @@ export default function App() {
           yd={yd}
           year={activeYear}
           cal={data.cal || {}}
-          onToggle={toggleCalDay}
+          onPick={(m, day) => setCalPick({ m, day })}
           onJump={jumpToMonth}
         />
       )}
@@ -458,6 +470,17 @@ export default function App() {
         </button>
       </section>
       </>
+      )}
+
+      {calPick && (
+        <CalPicker
+          year={activeYear}
+          m={calPick.m}
+          day={calPick.day}
+          current={calState(data.cal || {}, activeYear, calPick.m, calPick.day)}
+          onSelect={(state) => { setDayState(activeYear, calPick.m, calPick.day, state); setCalPick(null); }}
+          onClose={() => setCalPick(null)}
+        />
       )}
 
       {editor && (
@@ -581,31 +604,41 @@ function EventRow({ e, onClick, wide, myName, year, added, onCalMark, onCalUnmar
   );
 }
 
-function CalendarView({ yd, year, cal, onToggle, onJump }) {
+function CalendarView({ yd, year, cal, onPick, onJump }) {
   return (
-    <div className="ann-cal-grid">
-      {MONTHS.map((mo) => (
-        <MiniMonth
-          key={mo.n}
-          year={year}
-          m={mo.n}
-          en={mo.en}
-          events={yd.months[mo.n]}
-          cal={cal}
-          onToggle={onToggle}
-          onJump={onJump}
-        />
-      ))}
+    <div className="ann-cal-wrap">
+      <div className="ann-cal-legend">
+        {DAY_STATES.filter((s) => s.key !== "open").map((s) => (
+          <span key={s.key} className="ann-cal-leg">
+            <span className={"ann-cal-swatch " + s.cls} />
+            {s.label}
+          </span>
+        ))}
+        <span className="ann-cal-leg"><span className="ann-cal-dot-leg" />予定あり</span>
+      </div>
+      <div className="ann-cal-grid">
+        {MONTHS.map((mo) => (
+          <MiniMonth
+            key={mo.n}
+            year={year}
+            m={mo.n}
+            en={mo.en}
+            events={yd.months[mo.n]}
+            cal={cal}
+            onPick={onPick}
+            onJump={onJump}
+          />
+        ))}
+      </div>
     </div>
   );
 }
 
-function MiniMonth({ year, m, en, events, cal, onToggle, onJump }) {
+function MiniMonth({ year, m, en, events, cal, onPick, onJump }) {
   const daysInMonth = new Date(year, m, 0).getDate();
   const firstDow = new Date(year, m - 1, 1).getDay(); // 0=日
   const lead = (firstDow + 6) % 7; // 月曜始まりの先頭空白
 
-  // 予定のある日（複数日・連休は各日)
   const evDays = new Set();
   for (const e of events) {
     if (e.deletedAt || !e.date) continue;
@@ -615,10 +648,12 @@ function MiniMonth({ year, m, en, events, cal, onToggle, onJump }) {
     }
   }
 
-  let openCount = 0;
-  let offCount = 0;
+  let openCount = 0, offCount = 0, nenkyuCount = 0;
   for (let d = 1; d <= daysInMonth; d++) {
-    calOff(cal, year, m, d) ? offCount++ : openCount++;
+    const s = calState(cal, year, m, d);
+    if (s === "open" || s === "daishin") openCount++;
+    else if (s === "nenkyu") nenkyuCount++;
+    else offCount++; // off, holiday
   }
 
   const cells = [];
@@ -635,6 +670,7 @@ function MiniMonth({ year, m, en, events, cal, onToggle, onJump }) {
         </button>
         <span className="ann-mini-count">
           診療{openCount}・<span className="off">休{offCount}</span>
+          {nenkyuCount > 0 ? `・年休${nenkyuCount}` : ""}
         </span>
       </div>
       <div className="ann-mini-grid">
@@ -646,17 +682,17 @@ function MiniMonth({ year, m, en, events, cal, onToggle, onJump }) {
         {cells.map((d, i) => {
           if (d === null) return <div key={i} className="ann-mini-cell empty" />;
           const dow = new Date(year, m - 1, d).getDay();
-          const off = calOff(cal, year, m, d);
+          const st = dayStateOf(calState(cal, year, m, d));
           let cc = "ann-mini-cell";
-          if (off) cc += " off";
+          if (st && st.cls) cc += " " + st.cls;
           if (dow === 0) cc += " sun";
           else if (dow === 6) cc += " sat";
           return (
             <button
               key={i}
               className={cc}
-              onClick={() => onToggle(year, `${m}-${d}`, dow)}
-              title={off ? "休診（クリックで診療に)" : "診療（クリックで休診に)"}
+              onClick={() => onPick(m, d)}
+              title={st ? st.label : ""}
             >
               {d}
               {evDays.has(d) && <span className="ann-mini-dot" />}
@@ -667,6 +703,35 @@ function MiniMonth({ year, m, en, events, cal, onToggle, onJump }) {
     </section>
   );
 }
+
+function CalPicker({ year, m, day, current, onSelect, onClose }) {
+  const dow = new Date(year, m - 1, day).getDay();
+  const wd = ["日", "月", "火", "水", "木", "金", "土"][dow];
+  return (
+    <div className="ann-modal-bg" onClick={onClose}>
+      <div className="ann-modal ann-modal-narrow" onClick={(e) => e.stopPropagation()}>
+        <div className="ann-modal-head">
+          <span>{m}月{day}日（{wd}）</span>
+          <span className="ann-modal-sub">区分を選ぶ</span>
+        </div>
+        <div className="ann-state-pick">
+          {DAY_STATES.map((s) => (
+            <button
+              key={s.key}
+              className={"ann-state " + (s.cls || "st-open") + (current === s.key ? " is-on" : "")}
+              onClick={() => onSelect(s.key)}
+            >
+              <span className="ann-state-sw" />
+              {s.label}
+              {current === s.key && <span className="ann-state-now">現在</span>}
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 
 function ClinicSummary({ yd, year }) {
   const days = [];

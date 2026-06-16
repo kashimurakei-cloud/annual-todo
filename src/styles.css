@@ -247,3 +247,37 @@ body{margin:0;background:var(--bg);}
 .ann-mini-cell.sat{color:#2D6FE0;}
 .ann-mini-dot{position:absolute;bottom:3px;right:3px;width:5px;height:5px;border-radius:50%;
   background:#C77100;}
+
+/* カレンダー：区分の色・凡例・選択画面 */
+.ann-cal-wrap{max-width:1180px;margin:0 auto;}
+.ann-cal-legend{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:12px;
+  font-size:12px;font-weight:700;color:var(--ink-soft);}
+.ann-cal-leg{display:flex;align-items:center;gap:5px;}
+.ann-cal-swatch{width:14px;height:14px;border-radius:4px;border:1px solid rgba(0,0,0,.08);}
+.ann-cal-swatch.st-off{background:#FDE4E8;}
+.ann-cal-swatch.st-holiday{background:#E5478A;}
+.ann-cal-swatch.st-nenkyu{background:#16A34A;}
+.ann-cal-swatch.st-daishin{background:#2563EB;}
+.ann-cal-dot-leg{width:6px;height:6px;border-radius:50%;background:#C77100;}
+
+/* 区分ごとのセル色（日曜/土曜の文字色より後に定義して優先) */
+.ann-mini-cell.st-off{background:#FDE4E8;border-color:#F6C9D1;}
+.ann-mini-cell.st-holiday{background:#E5478A;border-color:#E5478A;color:#fff;}
+.ann-mini-cell.st-nenkyu{background:#16A34A;border-color:#16A34A;color:#fff;}
+.ann-mini-cell.st-daishin{background:#2563EB;border-color:#2563EB;color:#fff;}
+
+/* 日付タップで出る区分選択 */
+.ann-modal-narrow{max-width:320px;}
+.ann-state-pick{display:flex;flex-direction:column;gap:8px;margin-top:8px;}
+.ann-state{display:flex;align-items:center;gap:10px;border:1px solid var(--line);background:#fff;
+  border-radius:10px;padding:11px 14px;font-size:14px;font-weight:700;color:var(--ink);
+  cursor:pointer;font-family:inherit;text-align:left;transition:.12s;}
+.ann-state:hover{border-color:var(--teal);}
+.ann-state.is-on{border-color:var(--teal);background:#EAF8F5;}
+.ann-state-sw{flex:none;width:16px;height:16px;border-radius:4px;border:1px solid #D5DBDF;background:#fff;}
+.ann-state.st-off .ann-state-sw{background:#FDE4E8;}
+.ann-state.st-holiday .ann-state-sw{background:#E5478A;border-color:#E5478A;}
+.ann-state.st-nenkyu .ann-state-sw{background:#16A34A;border-color:#16A34A;}
+.ann-state.st-daishin .ann-state-sw{background:#2563EB;border-color:#2563EB;}
+.ann-state-now{margin-left:auto;font-size:10px;font-weight:800;color:var(--teal-d);
+  background:#D6F0EA;padding:2px 8px;border-radius:999px;}
