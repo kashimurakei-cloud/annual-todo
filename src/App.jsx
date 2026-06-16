@@ -30,6 +30,18 @@ const LEVELS = [
 ];
 const levelOf = (k) => LEVELS.find((l) => l.key === k);
 
+// 日付（MM/DD）と年から曜日を求める
+const WD = ["日", "月", "火", "水", "木", "金", "土"];
+function weekdayInfo(dateStr, year) {
+  const m = String(dateStr || "").match(/(\d{1,2})\D+(\d{1,2})/);
+  if (!m) return null;
+  const mo = Number(m[1]);
+  const da = Number(m[2]);
+  const d = new Date(year, mo - 1, da);
+  if (d.getMonth() !== mo - 1 || d.getDate() !== da) return null; // 02/30 などの不正値
+  return { wd: WD[d.getDay()], dow: d.getDay() };
+}
+
 let _id = 0;
 const uid = () => `e${Date.now().toString(36)}${(_id++).toString(36)}`;
 const ev = (importance, date, text, author) => ({
@@ -431,6 +443,7 @@ function EventRow({ e, onClick, wide, myName, year, added, onCalMark, onCalUnmar
   const isOther = e.author && e.author !== myName;
   const isDeleted = !!e.deletedAt;
   const cal = !isDeleted && e.date ? gcalUrl(e, year) : null;
+  const wi = e.date ? weekdayInfo(e.date, year) : null;
   let cls = "ann-ev";
   if (wide) cls += " ann-ev-wide";
   if (isOther) cls += " ann-ev-other";
@@ -446,7 +459,21 @@ function EventRow({ e, onClick, wide, myName, year, added, onCalMark, onCalUnmar
           <span className="ann-badge ann-badge-none">−</span>
         )}
         {e.date
-          ? <span className="ann-date">{e.date}</span>
+          ? (
+            <span className="ann-date">
+              {e.date}
+              {wi && (
+                <span
+                  className={
+                    "ann-wd" +
+                    (wi.dow === 0 ? " ann-wd-sun" : wi.dow === 6 ? " ann-wd-sat" : "")
+                  }
+                >
+                  （{wi.wd}）
+                </span>
+              )}
+            </span>
+          )
           : <span className="ann-undated">未定</span>}
         <span className="ann-text">{e.text}</span>
         {e.author && <span className="ann-author">{e.author}</span>}

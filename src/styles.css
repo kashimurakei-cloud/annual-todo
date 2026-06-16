@@ -176,3 +176,9 @@ body{margin:0;background:var(--bg);}
 /* カレンダー追加済みボタン */
 .ann-cal-done{background:transparent;border:none;cursor:pointer;font-family:inherit;opacity:1;}
 .ann-cal-done:hover{background:#FEEBEC;opacity:1;}
+
+/* 日付の曜日表示 */
+.ann-wd{margin-left:1px;font-size:11px;font-weight:700;color:var(--ink-soft);}
+.ann-wd-sun{color:#E5484D;}
+.ann-wd-sat{color:#2D6FE0;}
+.ann-ev-deleted .ann-wd{text-decoration:line-through;}
