@@ -252,6 +252,37 @@ function recurLabel(t) {
   if (t.freq === "everyN") return `${t.interval}ヶ月ごと ${t.day}日`;
   return `毎月${t.day}日`;
 }
+// ある年の発生日マップ { "m-d": [タイトル] }（カレンダー表示用)
+function recurOccMap(tasks, year) {
+  const map = {};
+  for (const t of tasks || []) {
+    if (!t || t.freq === "none") continue;
+    let cur = occOnOrAfter(t, new Date(year, 0, 1));
+    let guard = 0;
+    while (cur && cur.getFullYear() === year && guard < 420) {
+      const k = `${cur.getMonth() + 1}-${cur.getDate()}`;
+      (map[k] = map[k] || []).push(t.title || "");
+      cur = occOnOrAfter(t, rAddDays(cur, 1));
+      guard++;
+    }
+  }
+  return map;
+}
+// ある年・月に発生する定期タスク（印刷用)
+function recurInMonth(tasks, year, m) {
+  const out = [];
+  for (const t of tasks || []) {
+    if (!t || t.freq === "none") continue;
+    let cur = occOnOrAfter(t, new Date(year, m - 1, 1));
+    let guard = 0;
+    while (cur && cur.getFullYear() === year && cur.getMonth() + 1 === m && guard < 40) {
+      out.push({ id: t.id, title: t.title || "", day: cur.getDate(), importance: t.importance || "" });
+      cur = occOnOrAfter(t, rAddDays(cur, 1));
+      guard++;
+    }
+  }
+  return out.sort((a, b) => a.day - b.day);
+}
 
 function cleanEvent(e) {
   const o = {
@@ -290,7 +321,7 @@ export default function App() {
   const [data, setData] = useState(null);
   const [activeYear, setActiveYear] = useState(new Date().getFullYear());
   const [filter, setFilter] = useState(null);
-  const [view, setView] = useState("list"); // "list" | "cal" | "recur"
+  const [view, setView] = useState("home"); // "home" | "list" | "cal" | "recur"
   const [pendingScroll, setPendingScroll] = useState(null);
   const [calPick, setCalPick] = useState(null); // {m, day}
   const [editor, setEditor] = useState(null);
@@ -390,6 +421,34 @@ export default function App() {
   }
 
   const yd = data.years[activeYear] || emptyYear();
+  const recurMap = recurOccMap(data.recurring || [], activeYear);
+
+  // ホームの件数バッジ（期限切れ＋今日)
+  const alertCount = (() => {
+    const t0 = rMid(new Date());
+    const yNow = t0.getFullYear();
+    let n = 0;
+    for (const t of data.recurring || []) {
+      if (t.freq === "none") continue;
+      const due = nextDue(t, t0);
+      if (due && Math.round((rMid(due) - t0) / 86400000) <= 0) n++;
+    }
+    const ydNow = data.years[yNow];
+    if (ydNow) {
+      for (let m = 1; m <= 12; m++) {
+        for (const e of ydNow.months[m]) {
+          if (e.deletedAt || !e.date) continue;
+          const mm = String(e.date).match(/(\d{1,2})\D+(\d{1,2})/);
+          if (!mm) continue;
+          const dd = Math.round(
+            (rMid(new Date(yNow, Number(mm[1]) - 1, Number(mm[2]))) - t0) / 86400000
+          );
+          if (dd === 0) n++;
+        }
+      }
+    }
+    return n;
+  })();
 
   const addYear = () => {
     const last = Math.max(...data.yearOrder);
@@ -461,7 +520,7 @@ export default function App() {
   };
 
   // 横スワイプ（フリック)でビュー切替
-  const VIEW_ORDER = ["list", "cal", "recur"];
+  const VIEW_ORDER = ["home", "list", "cal", "recur"];
   const onSwipeStart = (e) => {
     const p = e.touches[0];
     swipeRef.current = { x: p.clientX, y: p.clientY };
@@ -571,6 +630,9 @@ export default function App() {
             <button className="ann-namechip" onClick={() => setShowName(true)}>
               {myName ? `👤 ${myName}` : "名前を設定"}
             </button>
+            <button className="ann-printbtn" onClick={() => window.print()} title={`${activeYear}年を印刷`}>
+              🖨 印刷
+            </button>
           </div>
         </div>
 
@@ -590,6 +652,13 @@ export default function App() {
         </div>
 
         <div className="ann-viewtabs">
+          <button
+            className={"ann-viewtab" + (view === "home" ? " is-on" : "")}
+            onClick={() => setView("home")}
+          >
+            ホーム
+            {alertCount > 0 && <span className="ann-tab-badge">{alertCount}</span>}
+          </button>
           <button
             className={"ann-viewtab" + (view === "list" ? " is-on" : "")}
             onClick={() => setView("list")}
@@ -638,11 +707,21 @@ export default function App() {
       </header>
 
       <div className="ann-body" onTouchStart={onSwipeStart} onTouchEnd={onSwipeEnd}>
+      {view === "home" && (
+        <HomeView
+          data={data}
+          onComplete={completeRecur}
+          onGoMonth={(m) => jumpToMonth(m)}
+          onGoRecur={() => setView("recur")}
+        />
+      )}
+
       {view === "cal" && (
         <CalendarView
           yd={yd}
           year={activeYear}
           cal={data.cal || {}}
+          recur={recurMap}
           onPick={(m, day) => setCalPick({ m, day })}
           onJump={jumpToMonth}
         />
@@ -755,6 +834,8 @@ export default function App() {
       <footer className="ann-foot">
         このリンクを知っている人は誰でも閲覧・編集できます。削除した予定は取り消し線で残り、2週間後に自動で消えます。
       </footer>
+
+      <PrintSheet yd={yd} year={activeYear} tasks={data.recurring || []} cal={data.cal || {}} />
     </div>
   );
 }
@@ -859,7 +940,7 @@ function EventRow({ e, onClick, wide, myName, year, added, onCalMark, onCalUnmar
   );
 }
 
-function CalendarView({ yd, year, cal, onPick, onJump }) {
+function CalendarView({ yd, year, cal, recur, onPick, onJump }) {
   return (
     <div className="ann-cal-wrap">
       <div className="ann-cal-legend">
@@ -870,6 +951,7 @@ function CalendarView({ yd, year, cal, onPick, onJump }) {
           </span>
         ))}
         <span className="ann-cal-leg"><span className="ann-cal-dot-leg" />予定あり</span>
+        <span className="ann-cal-leg"><span className="ann-cal-dot-leg recur" />定期タスク</span>
       </div>
       <div className="ann-cal-grid">
         {MONTHS.map((mo) => (
@@ -880,6 +962,7 @@ function CalendarView({ yd, year, cal, onPick, onJump }) {
             en={mo.en}
             events={yd.months[mo.n]}
             cal={cal}
+            recur={recur || {}}
             onPick={onPick}
             onJump={onJump}
           />
@@ -889,7 +972,7 @@ function CalendarView({ yd, year, cal, onPick, onJump }) {
   );
 }
 
-function MiniMonth({ year, m, en, events, cal, onPick, onJump }) {
+function MiniMonth({ year, m, en, events, cal, recur, onPick, onJump }) {
   const daysInMonth = new Date(year, m, 0).getDate();
   const firstDow = new Date(year, m - 1, 1).getDay(); // 0=日
   const lead = (firstDow + 6) % 7; // 月曜始まりの先頭空白
@@ -947,10 +1030,16 @@ function MiniMonth({ year, m, en, events, cal, onPick, onJump }) {
               key={i}
               className={cc}
               onClick={() => onPick(m, d)}
-              title={st ? st.label : ""}
+              title={
+                (st ? st.label : "") +
+                (recur[`${m}-${d}`] ? `｜定期: ${recur[`${m}-${d}`].join("、")}` : "")
+              }
             >
               {d}
-              {evDays.has(d) && <span className="ann-mini-dot" />}
+              <span className="ann-mini-dots">
+                {evDays.has(d) && <span className="ann-mini-dot" />}
+                {recur[`${m}-${d}`] && <span className="ann-mini-dot recur" />}
+              </span>
             </button>
           );
         })}
@@ -1479,6 +1568,167 @@ function RecurEditor({ existing, tasks, onSave, onDelete, onClose }) {
           <button className="ann-btn ann-btn-save" onClick={submit}>保存</button>
         </div>
       </div>
+    </div>
+  );
+}
+
+function HomeView({ data, onComplete, onGoMonth, onGoRecur }) {
+  const today = rMid(new Date());
+  const year = today.getFullYear();
+  const yd = data.years[year] || null;
+  const tasks = (data.recurring || []).filter((t) => t.freq !== "none");
+  const WD = ["日", "月", "火", "水", "木", "金", "土"];
+
+  const rinfo = tasks
+    .map((t) => {
+      const due = nextDue(t, today);
+      const days = due ? Math.round((rMid(due) - today) / 86400000) : null;
+      return { kind: "recur", t, due, days };
+    })
+    .filter((r) => r.due);
+
+  const evItems = [];
+  if (yd) {
+    for (let m = 1; m <= 12; m++) {
+      for (const e of yd.months[m]) {
+        if (e.deletedAt || !e.date) continue;
+        const mm = String(e.date).match(/(\d{1,2})\D+(\d{1,2})/);
+        if (!mm) continue;
+        const due = rMid(new Date(year, Number(mm[1]) - 1, Number(mm[2])));
+        const days = Math.round((due - today) / 86400000);
+        evItems.push({ kind: "event", e, m: Number(mm[1]), due, days });
+      }
+    }
+  }
+
+  const overdue = rinfo.filter((r) => r.days < 0).sort((a, b) => a.due - b.due);
+  const todayItems = [...rinfo.filter((r) => r.days === 0), ...evItems.filter((r) => r.days === 0)]
+    .sort((a, b) => a.due - b.due);
+  const weekItems = [
+    ...rinfo.filter((r) => r.days > 0 && r.days <= 7),
+    ...evItems.filter((r) => r.days > 0 && r.days <= 7),
+  ].sort((a, b) => a.due - b.due);
+
+  const renderRow = (it, key) => {
+    const lv = levelOf(it.kind === "recur" ? it.t.importance : it.e.importance);
+    const title = it.kind === "recur" ? it.t.title || "（無題)" : it.e.text || "（無題)";
+    const dd = it.due;
+    return (
+      <div className="ann-home-row" key={key}>
+        <span className={"ann-home-ico " + it.kind}>{it.kind === "recur" ? "🔁" : "📅"}</span>
+        <button
+          className="ann-home-main"
+          onClick={() => (it.kind === "event" ? onGoMonth(it.m) : onGoRecur())}
+        >
+          <span className="ann-home-rowtop">
+            {lv && (
+              <span className="ann-badge" style={{ background: lv.bg, color: lv.color }}>{lv.label}</span>
+            )}
+            <span className="ann-home-name">{title}</span>
+          </span>
+          <span className={"ann-home-date" + (it.days < 0 ? " over" : "")}>
+            {dd.getMonth() + 1}/{dd.getDate()}（{WD[dd.getDay()]})
+            {it.days < 0 ? `・期限切れ（${-it.days}日経過)` : it.days === 0 ? "・今日" : `・あと${it.days}日`}
+          </span>
+        </button>
+        {it.kind === "recur" && (
+          <button className="ann-home-done" onClick={() => onComplete(it.t.id)} title="完了">✓</button>
+        )}
+      </div>
+    );
+  };
+
+  const empty = !overdue.length && !todayItems.length && !weekItems.length;
+
+  return (
+    <div className="ann-home">
+      <div className="ann-home-greet">
+        {today.getMonth() + 1}月{today.getDate()}日（{WD[today.getDay()]})・直近の予定
+      </div>
+      {empty && (
+        <div className="ann-recur-empty">直近1週間にやることはありません。お疲れさまです。</div>
+      )}
+      {overdue.length > 0 && (
+        <section className="ann-home-sec is-over">
+          <h3 className="ann-home-h">⚠ 期限切れ（{overdue.length})</h3>
+          {overdue.map((it, i) => renderRow(it, "o" + i))}
+        </section>
+      )}
+      {todayItems.length > 0 && (
+        <section className="ann-home-sec">
+          <h3 className="ann-home-h">今日</h3>
+          {todayItems.map((it, i) => renderRow(it, "t" + i))}
+        </section>
+      )}
+      {weekItems.length > 0 && (
+        <section className="ann-home-sec">
+          <h3 className="ann-home-h">今週（これから7日)</h3>
+          {weekItems.map((it, i) => renderRow(it, "w" + i))}
+        </section>
+      )}
+    </div>
+  );
+}
+
+function PrintSheet({ yd, year, tasks, cal }) {
+  const WD = ["日", "月", "火", "水", "木", "金", "土"];
+  const evForDay = (events, m, d) =>
+    events.filter((e) => {
+      if (e.deletedAt) return false;
+      const toks = String(e.date || "").match(/(\d{1,2})\D+(\d{1,2})/g) || [];
+      return toks.some((tok) => {
+        const mm = tok.match(/(\d{1,2})\D+(\d{1,2})/);
+        return Number(mm[1]) === m && Number(mm[2]) === d;
+      });
+    });
+  return (
+    <div className="ann-print">
+      {MONTHS.map((mo) => {
+        const m = mo.n;
+        const dim = new Date(year, m, 0).getDate();
+        const todo = recurInMonth(tasks, year, m);
+        return (
+          <div className="ann-print-page" key={m}>
+            <div className="ann-print-head">
+              <span className="ann-print-month">{m}月</span>
+              <span className="ann-print-en">{mo.en}</span>
+              <span className="ann-print-year">{year}</span>
+            </div>
+            <table className="ann-print-table">
+              <thead>
+                <tr><th className="c-d">日</th><th>予定</th></tr>
+              </thead>
+              <tbody>
+                {Array.from({ length: dim }, (_, i) => i + 1).map((d) => {
+                  const dow = new Date(year, m - 1, d).getDay();
+                  const evs = evForDay(yd.months[m], m, d);
+                  return (
+                    <tr key={d} className={dow === 0 ? "sun" : dow === 6 ? "sat" : ""}>
+                      <td className="c-d">{d}<span className="c-wd">{WD[dow]}</span></td>
+                      <td>
+                        {evs.map((e) => (
+                          <span key={e.id} className="ann-print-ev">
+                            {e.importance && `[${e.importance}] `}{e.text}
+                          </span>
+                        ))}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            <div className="ann-print-todo">
+              <div className="ann-print-todo-h">今月のやること（定期)</div>
+              {todo.length === 0 && <div className="ann-print-todo-empty">―</div>}
+              {todo.map((x) => (
+                <div className="ann-print-todo-row" key={x.id + "-" + x.day}>
+                  ☐ {m}/{x.day}　{x.importance && `[${x.importance}] `}{x.title}
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }

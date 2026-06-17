@@ -245,8 +245,9 @@ body{margin:0;background:var(--bg);}
 .ann-mini-cell.off{background:#FDE4E8;border-color:#F6C9D1;}
 .ann-mini-cell.sun{color:#E5484D;}
 .ann-mini-cell.sat{color:#2D6FE0;}
-.ann-mini-dot{position:absolute;bottom:3px;right:3px;width:5px;height:5px;border-radius:50%;
-  background:#C77100;}
+.ann-mini-dots{position:absolute;bottom:3px;left:0;right:0;display:flex;gap:2px;justify-content:center;}
+.ann-mini-dot{width:5px;height:5px;border-radius:50%;background:#C77100;}
+.ann-mini-dot.recur{background:#0E9F8E;}
 
 /* カレンダー：区分の色・凡例・選択画面 */
 .ann-cal-wrap{max-width:1180px;margin:0 auto;}
@@ -353,3 +354,60 @@ body{margin:0;background:var(--bg);}
 .ann-recur-later-toggle{background:none;border:none;color:var(--ink-soft);font-size:13px;
   font-weight:700;cursor:pointer;font-family:inherit;padding:4px 2px;}
 .ann-recur-due.over{color:#E5484D;}
+
+/* ===== ホーム・バッジ・印刷ボタン ===== */
+.ann-tab-badge{display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:18px;
+  padding:0 5px;margin-left:6px;border-radius:999px;background:#E5484D;color:#fff;font-size:11px;
+  font-weight:800;vertical-align:middle;}
+.ann-printbtn{background:#fff;border:1px solid var(--line);border-radius:999px;padding:7px 12px;
+  font-size:12px;font-weight:700;color:var(--ink);cursor:pointer;font-family:inherit;white-space:nowrap;}
+.ann-printbtn:hover{border-color:var(--teal);}
+
+.ann-home{max-width:680px;margin:0 auto;}
+.ann-home-greet{font-size:14px;font-weight:800;color:var(--ink);margin-bottom:14px;}
+.ann-home-sec{margin-bottom:18px;}
+.ann-home-h{font-size:13px;font-weight:800;color:var(--ink-soft);margin:0 0 8px;
+  padding-bottom:6px;border-bottom:1px solid var(--line);}
+.ann-home-sec.is-over .ann-home-h{color:#E5484D;border-color:#F3C7C9;}
+.ann-home-row{display:flex;align-items:stretch;gap:8px;background:#fff;border:1px solid var(--line);
+  border-radius:10px;margin-bottom:8px;overflow:hidden;}
+.ann-home-sec.is-over .ann-home-row{background:#FEF4F4;border-color:#F3C7C9;}
+.ann-home-ico{display:flex;align-items:center;padding-left:12px;font-size:15px;}
+.ann-home-main{flex:1;text-align:left;background:none;border:none;cursor:pointer;font-family:inherit;
+  padding:11px 8px;display:flex;flex-direction:column;gap:3px;min-width:0;}
+.ann-home-rowtop{display:flex;align-items:center;gap:8px;}
+.ann-home-name{font-size:15px;font-weight:700;color:var(--ink);}
+.ann-home-date{font-size:12px;font-weight:700;color:var(--teal-d);font-variant-numeric:tabular-nums;}
+.ann-home-date.over{color:#E5484D;}
+.ann-home-done{background:var(--teal);color:#fff;border:none;width:46px;font-size:16px;font-weight:800;
+  cursor:pointer;font-family:inherit;}
+.ann-home-done:hover{background:var(--teal-d);}
+
+/* ===== 印刷（画面では非表示) ===== */
+.ann-print{display:none;}
+@media print{
+  @page{size:A4 portrait;margin:12mm;}
+  body{background:#fff;}
+  .ann-root > *:not(.ann-print){display:none !important;}
+  .ann-print{display:block;}
+  .ann-print-page{page-break-after:always;color:#000;font-size:11px;}
+  .ann-print-page:last-child{page-break-after:auto;}
+  .ann-print-head{display:flex;align-items:baseline;gap:8px;border-bottom:2px solid #000;
+    padding-bottom:4px;margin-bottom:8px;}
+  .ann-print-month{font-size:20px;font-weight:800;}
+  .ann-print-en{font-size:11px;color:#666;letter-spacing:1px;}
+  .ann-print-year{margin-left:auto;font-size:13px;font-weight:700;}
+  .ann-print-table{width:100%;border-collapse:collapse;}
+  .ann-print-table th{background:#222;color:#fff;font-size:10px;text-align:left;padding:3px 6px;}
+  .ann-print-table td{border-bottom:1px solid #ccc;padding:2px 6px;vertical-align:top;height:18px;}
+  .ann-print-table .c-d{width:42px;white-space:nowrap;font-weight:700;}
+  .ann-print-table .c-wd{margin-left:4px;font-weight:400;color:#666;font-size:9px;}
+  .ann-print-table tr.sun .c-d{color:#c00;}
+  .ann-print-table tr.sat .c-d{color:#06c;}
+  .ann-print-ev{display:inline-block;margin-right:10px;}
+  .ann-print-todo{margin-top:10px;border:1px solid #000;padding:6px 8px;}
+  .ann-print-todo-h{font-weight:800;font-size:11px;border-bottom:1px solid #999;
+    margin-bottom:4px;padding-bottom:2px;}
+  .ann-print-todo-row{font-size:11px;line-height:1.7;}
+  .ann-print-todo-empty{color:#999;}
+}
