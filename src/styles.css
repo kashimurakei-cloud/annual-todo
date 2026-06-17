@@ -297,3 +297,45 @@ body{margin:0;background:var(--bg);}
 .ann-mh-item .ann-clinic-tag,
 .ann-mh-item .ann-tag-daishin,
 .ann-mh-item .ann-tag-nenkyu{font-size:9px;padding:1px 5px;margin-top:0;}
+
+/* ===== 定期タスク ===== */
+.ann-body{touch-action:pan-y;}
+.ann-recur{max-width:760px;margin:0 auto;}
+.ann-recur-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:14px;}
+.ann-recur-title{font-size:18px;font-weight:800;color:var(--ink);margin:0;}
+.ann-recur-note{font-size:12px;color:var(--ink-soft);margin:4px 0 0;line-height:1.5;}
+.ann-recur-empty{padding:28px 18px;text-align:center;color:var(--ink-soft);font-size:13px;
+  background:#fff;border:1px dashed var(--line);border-radius:12px;line-height:1.6;}
+.ann-recur-list{display:flex;flex-direction:column;gap:10px;}
+.ann-recur-card{display:flex;gap:10px;align-items:stretch;background:#fff;border:1px solid var(--line);
+  border-left:4px solid var(--line);border-radius:12px;overflow:hidden;}
+.ann-recur-card.is-over{border-left-color:#E5484D;background:#FEF4F4;}
+.ann-recur-card.is-soon{border-left-color:#C77100;}
+.ann-recur-main{flex:1;text-align:left;background:none;border:none;cursor:pointer;
+  padding:12px 14px;font-family:inherit;display:flex;flex-direction:column;gap:4px;min-width:0;}
+.ann-recur-top{display:flex;align-items:center;gap:8px;}
+.ann-recur-name{font-size:15px;font-weight:700;color:var(--ink);}
+.ann-recur-sub{display:flex;flex-wrap:wrap;gap:6px 12px;align-items:center;font-size:12px;}
+.ann-recur-freq{color:var(--ink-soft);font-weight:700;background:#EEF1F3;padding:2px 8px;border-radius:6px;}
+.ann-recur-due{font-weight:800;color:var(--teal-d);font-variant-numeric:tabular-nums;}
+.ann-recur-due.soon{color:#C77100;}
+.ann-recur-due.over{color:#E5484D;}
+.ann-recur-memo{font-size:12px;color:var(--ink-soft);line-height:1.5;}
+.ann-recur-last{font-size:11px;color:#9AA7B0;}
+.ann-recur-actions{display:flex;flex-direction:column;justify-content:center;gap:6px;padding:8px 10px 8px 0;}
+.ann-recur-done{background:var(--teal);color:#fff;border:none;border-radius:8px;padding:8px 12px;
+  font-size:13px;font-weight:800;cursor:pointer;white-space:nowrap;font-family:inherit;}
+.ann-recur-done:hover{background:var(--teal-d);}
+.ann-recur-undo{background:none;border:1px solid var(--line);color:var(--ink-soft);border-radius:8px;
+  padding:4px 10px;font-size:11px;cursor:pointer;font-family:inherit;}
+
+/* 定期タスク編集 */
+.ann-recur-when{background:#F7F9FA;border:1px solid var(--line);border-radius:10px;padding:12px;margin-top:8px;}
+.ann-recur-when-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:14px;font-weight:700;color:var(--ink);}
+.ann-num{width:64px;border:1px solid var(--line);border-radius:8px;padding:8px;font-size:15px;
+  text-align:center;font-family:inherit;}
+.ann-wd-pick{display:flex;gap:4px;flex-wrap:wrap;}
+.ann-wd-btn{width:34px;height:34px;border:1px solid var(--line);background:#fff;border-radius:8px;
+  font-size:13px;font-weight:700;color:var(--ink);cursor:pointer;font-family:inherit;}
+.ann-wd-btn.is-on{background:var(--teal);border-color:var(--teal);color:#fff;}
+.ann-recur-hint{font-size:11px;color:var(--ink-soft);margin:8px 0 0;}

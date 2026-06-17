@@ -160,7 +160,94 @@ function normalize(raw) {
   const yearOrder = (raw.yearOrder || Object.keys(years).map(Number))
     .map(Number)
     .sort((a, b) => a - b);
-  return { yearOrder, years, cal: raw.cal || {} };
+  return {
+    yearOrder, years, cal: raw.cal || {},
+    recurring: (raw.recurring || []).map(cleanRecur),
+  };
+}
+
+// ===== 定期タスク（リマインダー) =====
+function cleanRecur(t) {
+  return {
+    id: t.id || uid(),
+    title: t.title || "",
+    freq: t.freq || "monthly", // monthly | yearly | everyN | weekly
+    day: t.day ?? 1,
+    month: t.month ?? 1,
+    interval: t.interval ?? 1,
+    baseYear: t.baseYear ?? null,
+    baseMonth: t.baseMonth ?? null,
+    weekday: t.weekday ?? 1,
+    importance: t.importance || "",
+    memo: t.memo || "",
+    author: t.author || "",
+    lastDone: t.lastDone || "",
+    createdAt: t.createdAt || 0,
+  };
+}
+const rDaysInMonth = (y, m) => new Date(y, m, 0).getDate();
+const rClampDay = (y, m, d) => Math.min(d, rDaysInMonth(y, m));
+const rMid = (dt) => new Date(dt.getFullYear(), dt.getMonth(), dt.getDate());
+const rAddDays = (dt, n) => new Date(dt.getFullYear(), dt.getMonth(), dt.getDate() + n);
+const rYmd = (dt) =>
+  `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
+const rParse = (s) => { const [y, m, d] = s.split("-").map(Number); return new Date(y, m - 1, d); };
+
+function occOnOrAfter(t, from) {
+  const f = rMid(from);
+  if (t.freq === "weekly") {
+    const wd = t.weekday ?? 1;
+    return rAddDays(f, (wd - f.getDay() + 7) % 7);
+  }
+  if (t.freq === "yearly") {
+    let y = f.getFullYear();
+    for (let i = 0; i < 6; i++) {
+      const m = t.month ?? 1, d = rClampDay(y, m, t.day ?? 1);
+      const c = new Date(y, m - 1, d);
+      if (c >= f) return c;
+      y++;
+    }
+    return null;
+  }
+  if (t.freq === "everyN") {
+    const iv = Math.max(1, t.interval ?? 1);
+    const baseIdx = (t.baseYear ?? f.getFullYear()) * 12 + ((t.baseMonth ?? (f.getMonth() + 1)) - 1);
+    let idx = f.getFullYear() * 12 + f.getMonth();
+    const rem = ((idx - baseIdx) % iv + iv) % iv;
+    if (rem !== 0) idx += iv - rem;
+    for (let i = 0; i < iv * 4 + 24; i++) {
+      const y = Math.floor(idx / 12), m = (idx % 12) + 1, d = rClampDay(y, m, t.day ?? 1);
+      const c = new Date(y, m - 1, d);
+      if (c >= f) return c;
+      idx += iv;
+    }
+    return null;
+  }
+  // monthly
+  let y = f.getFullYear(), m = f.getMonth() + 1;
+  for (let i = 0; i < 14; i++) {
+    const d = rClampDay(y, m, t.day ?? 1);
+    const c = new Date(y, m - 1, d);
+    if (c >= f) return c;
+    m++; if (m > 12) { m = 1; y++; }
+  }
+  return null;
+}
+function startOfPeriod(t, today) {
+  const x = rMid(today);
+  if (t.freq === "weekly") return rAddDays(x, -((x.getDay() + 6) % 7));
+  if (t.freq === "yearly") return new Date(x.getFullYear(), 0, 1);
+  return new Date(x.getFullYear(), x.getMonth(), 1);
+}
+function nextDue(t, today) {
+  const from = t.lastDone ? rAddDays(rParse(t.lastDone), 1) : startOfPeriod(t, today);
+  return occOnOrAfter(t, from);
+}
+function recurLabel(t) {
+  if (t.freq === "weekly") return `毎週${["日", "月", "火", "水", "木", "金", "土"][t.weekday ?? 1]}曜`;
+  if (t.freq === "yearly") return `毎年${t.month}/${t.day}`;
+  if (t.freq === "everyN") return `${t.interval}ヶ月ごと ${t.day}日`;
+  return `毎月${t.day}日`;
 }
 
 function cleanEvent(e) {
@@ -200,10 +287,12 @@ export default function App() {
   const [data, setData] = useState(null);
   const [activeYear, setActiveYear] = useState(new Date().getFullYear());
   const [filter, setFilter] = useState(null);
-  const [view, setView] = useState("list"); // "list" | "cal"
+  const [view, setView] = useState("list"); // "list" | "cal" | "recur"
   const [pendingScroll, setPendingScroll] = useState(null);
   const [calPick, setCalPick] = useState(null); // {m, day}
   const [editor, setEditor] = useState(null);
+  const [recurEditor, setRecurEditor] = useState(null); // {id} or {id:null}
+  const swipeRef = useRef({ x: 0, y: 0 });
   const [synced, setSynced] = useState(false);
   const [myName, setMyName] = useState(() => localStorage.getItem(NAME_KEY) || "");
   const [showName, setShowName] = useState(false);
@@ -325,7 +414,62 @@ export default function App() {
     setEditor(null);
   };
 
-  // カレンダーの日の区分を設定（デフォルトと同じなら保存しない)。
+  // 定期タスクの保存・削除・完了
+  const saveRecur = (t) => {
+    if (!t.title.trim()) { setRecurEditor(null); return; }
+    update((d) => {
+      d.recurring = d.recurring || [];
+      // 数ヶ月ごとは登録月を基準にする
+      if (t.freq === "everyN" && (t.baseYear == null || t.baseMonth == null)) {
+        const now = new Date();
+        t.baseYear = now.getFullYear();
+        t.baseMonth = now.getMonth() + 1;
+      }
+      if (t.id) {
+        const i = d.recurring.findIndex((x) => x.id === t.id);
+        if (i >= 0) d.recurring[i] = { ...d.recurring[i], ...t };
+      } else {
+        d.recurring.push(cleanRecur({ ...t, id: uid(), author: myName, createdAt: Date.now() }));
+      }
+    });
+    setRecurEditor(null);
+  };
+  const deleteRecur = (id) => {
+    update((d) => { d.recurring = (d.recurring || []).filter((x) => x.id !== id); });
+    setRecurEditor(null);
+  };
+  const completeRecur = (id) => {
+    update((d) => {
+      const t = (d.recurring || []).find((x) => x.id === id);
+      if (!t) return;
+      const due = nextDue(t, new Date());
+      if (due) t.lastDone = rYmd(due);
+    });
+  };
+  const undoRecur = (id) => {
+    update((d) => {
+      const t = (d.recurring || []).find((x) => x.id === id);
+      if (t) t.lastDone = "";
+    });
+  };
+
+  // 横スワイプ（フリック)でビュー切替
+  const VIEW_ORDER = ["list", "cal", "recur"];
+  const onSwipeStart = (e) => {
+    const p = e.touches[0];
+    swipeRef.current = { x: p.clientX, y: p.clientY };
+  };
+  const onSwipeEnd = (e) => {
+    const p = e.changedTouches[0];
+    const dx = p.clientX - swipeRef.current.x;
+    const dy = p.clientY - swipeRef.current.y;
+    if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5) {
+      const i = VIEW_ORDER.indexOf(view);
+      if (dx < 0 && i < VIEW_ORDER.length - 1) setView(VIEW_ORDER[i + 1]);
+      else if (dx > 0 && i > 0) setView(VIEW_ORDER[i - 1]);
+    }
+  };
+
   // 日曜診療・代診・計画年休は予定リストへ自動反映
   const setDayState = (yr, m, day, state) => {
     update((d) => {
@@ -451,6 +595,12 @@ export default function App() {
           >
             カレンダー
           </button>
+          <button
+            className={"ann-viewtab" + (view === "recur" ? " is-on" : "")}
+            onClick={() => setView("recur")}
+          >
+            定期タスク
+          </button>
         </div>
 
         <div className="ann-legend">
@@ -480,6 +630,7 @@ export default function App() {
         </div>
       </header>
 
+      <div className="ann-body" onTouchStart={onSwipeStart} onTouchEnd={onSwipeEnd}>
       {view === "cal" && (
         <CalendarView
           yd={yd}
@@ -487,6 +638,16 @@ export default function App() {
           cal={data.cal || {}}
           onPick={(m, day) => setCalPick({ m, day })}
           onJump={jumpToMonth}
+        />
+      )}
+
+      {view === "recur" && (
+        <RecurView
+          tasks={data.recurring || []}
+          onAdd={() => setRecurEditor({ id: null })}
+          onEdit={(id) => setRecurEditor({ id })}
+          onComplete={completeRecur}
+          onUndo={undoRecur}
         />
       )}
 
@@ -544,6 +705,16 @@ export default function App() {
         </button>
       </section>
       </>
+      )}
+      </div>
+
+      {recurEditor && (
+        <RecurEditor
+          existing={(data.recurring || []).find((t) => t.id === recurEditor.id) || null}
+          onSave={saveRecur}
+          onDelete={recurEditor.id ? () => deleteRecur(recurEditor.id) : null}
+          onClose={() => setRecurEditor(null)}
+        />
       )}
 
       {calPick && (
@@ -979,6 +1150,232 @@ function NameModal({ current, onSave, onClose }) {
         <div className="ann-modal-actions">
           <div className="ann-spacer" />
           <button className="ann-btn ann-btn-save" onClick={() => onSave(name)}>保存</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function RecurView({ tasks, onAdd, onEdit, onComplete, onUndo }) {
+  const today = rMid(new Date());
+  const WD = ["日", "月", "火", "水", "木", "金", "土"];
+  const rows = tasks
+    .map((t) => {
+      const due = nextDue(t, today);
+      const days = due ? Math.round((rMid(due) - today) / 86400000) : 99999;
+      return { t, due, days };
+    })
+    .sort((a, b) => (a.due && b.due ? a.due - b.due : 0));
+
+  return (
+    <div className="ann-recur">
+      <div className="ann-recur-head">
+        <div>
+          <h2 className="ann-recur-title">定期タスク</h2>
+          <p className="ann-recur-note">毎月・毎年など、定期的にやってくる仕事。近い順に並びます。終わったら「完了」で次回へ。</p>
+        </div>
+        <button className="ann-add" onClick={onAdd}>＋ 追加</button>
+      </div>
+
+      {rows.length === 0 && (
+        <div className="ann-recur-empty">
+          まだ登録がありません。「＋ 追加」から、毎月のレセプト送信や毎年の更新などを登録してください。
+        </div>
+      )}
+
+      <div className="ann-recur-list">
+        {rows.map(({ t, due, days }) => {
+          const overdue = days < 0;
+          const soon = days >= 0 && days <= 3;
+          const lv = levelOf(t.importance);
+          return (
+            <div
+              key={t.id}
+              className={"ann-recur-card" + (overdue ? " is-over" : soon ? " is-soon" : "")}
+            >
+              <button className="ann-recur-main" onClick={() => onEdit(t.id)}>
+                <div className="ann-recur-top">
+                  {lv && (
+                    <span className="ann-badge" style={{ background: lv.bg, color: lv.color }}>
+                      {lv.label}
+                    </span>
+                  )}
+                  <span className="ann-recur-name">{t.title || "（無題)"}</span>
+                </div>
+                <div className="ann-recur-sub">
+                  <span className="ann-recur-freq">{recurLabel(t)}</span>
+                  {due && (
+                    <span className={"ann-recur-due" + (overdue ? " over" : soon ? " soon" : "")}>
+                      {due.getMonth() + 1}/{due.getDate()}（{WD[due.getDay()]})・
+                      {overdue ? `${-days}日超過` : days === 0 ? "今日" : `あと${days}日`}
+                    </span>
+                  )}
+                </div>
+                {t.memo && <div className="ann-recur-memo">{t.memo}</div>}
+                {t.lastDone && (
+                  <div className="ann-recur-last">前回完了 {t.lastDone.slice(5).replace("-", "/")}</div>
+                )}
+              </button>
+              <div className="ann-recur-actions">
+                <button className="ann-recur-done" onClick={() => onComplete(t.id)}>✓ 完了</button>
+                {t.lastDone && (
+                  <button className="ann-recur-undo" onClick={() => onUndo(t.id)}>取消</button>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function RecurEditor({ existing, onSave, onDelete, onClose }) {
+  const [title, setTitle] = useState(existing?.title || "");
+  const [freq, setFreq] = useState(existing?.freq || "monthly");
+  const [day, setDay] = useState(existing?.day ?? 1);
+  const [month, setMonth] = useState(existing?.month ?? 1);
+  const [ivl, setIvl] = useState(existing?.interval ?? 3);
+  const [weekday, setWeekday] = useState(existing?.weekday ?? 1);
+  const [importance, setImportance] = useState(existing?.importance || "");
+  const [memo, setMemo] = useState(existing?.memo || "");
+
+  useEffect(() => {
+    const onKey = (e) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  const submit = () =>
+    onSave({
+      id: existing?.id ?? null,
+      title, freq,
+      day: Number(day), month: Number(month), interval: Number(ivl), weekday: Number(weekday),
+      importance, memo,
+      baseYear: existing?.baseYear ?? null, baseMonth: existing?.baseMonth ?? null,
+    });
+
+  const FREQS = [
+    { key: "monthly", label: "毎月" },
+    { key: "yearly", label: "毎年" },
+    { key: "everyN", label: "数ヶ月ごと" },
+    { key: "weekly", label: "毎週" },
+  ];
+  const WD = ["日", "月", "火", "水", "木", "金", "土"];
+
+  return (
+    <div className="ann-modal-bg" onClick={onClose}>
+      <div className="ann-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="ann-modal-head">
+          <span>{existing ? "定期タスクを編集" : "定期タスクを追加"}</span>
+        </div>
+
+        <label className="ann-field-label">やること</label>
+        <input
+          className="ann-input"
+          value={title}
+          placeholder="例）レセプト送信"
+          autoFocus
+          onChange={(e) => setTitle(e.target.value)}
+        />
+
+        <label className="ann-field-label">周期</label>
+        <div className="ann-lv-pick">
+          {FREQS.map((f) => (
+            <button
+              key={f.key}
+              className={"ann-lv" + (freq === f.key ? " is-on" : "")}
+              onClick={() => setFreq(f.key)}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="ann-recur-when">
+          {freq === "monthly" && (
+            <label className="ann-recur-when-row">
+              毎月
+              <input className="ann-num" type="number" min="1" max="31" value={day}
+                onChange={(e) => setDay(e.target.value)} />
+              日
+            </label>
+          )}
+          {freq === "yearly" && (
+            <label className="ann-recur-when-row">
+              毎年
+              <input className="ann-num" type="number" min="1" max="12" value={month}
+                onChange={(e) => setMonth(e.target.value)} />
+              月
+              <input className="ann-num" type="number" min="1" max="31" value={day}
+                onChange={(e) => setDay(e.target.value)} />
+              日
+            </label>
+          )}
+          {freq === "everyN" && (
+            <label className="ann-recur-when-row">
+              <input className="ann-num" type="number" min="2" max="12" value={ivl}
+                onChange={(e) => setIvl(e.target.value)} />
+              ヶ月ごと・
+              <input className="ann-num" type="number" min="1" max="31" value={day}
+                onChange={(e) => setDay(e.target.value)} />
+              日
+            </label>
+          )}
+          {freq === "weekly" && (
+            <div className="ann-recur-when-row">
+              毎週
+              <div className="ann-wd-pick">
+                {WD.map((w, i) => (
+                  <button key={i}
+                    className={"ann-wd-btn" + (Number(weekday) === i ? " is-on" : "")}
+                    onClick={() => setWeekday(i)}>
+                    {w}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          {freq === "everyN" && (
+            <p className="ann-recur-hint">※登録した月を起点に数えます（例：今月＋3ヶ月ごと)。</p>
+          )}
+        </div>
+
+        <label className="ann-field-label">重要度</label>
+        <div className="ann-lv-pick">
+          <button className={"ann-lv" + (importance === "" ? " is-on" : "")} onClick={() => setImportance("")}>
+            なし
+          </button>
+          {LEVELS.map((l) => (
+            <button
+              key={l.key}
+              className={"ann-lv" + (importance === l.key ? " is-on" : "")}
+              style={
+                importance === l.key
+                  ? { background: l.color, borderColor: l.color, color: "#fff" }
+                  : { color: l.color, borderColor: l.color }
+              }
+              onClick={() => setImportance(l.key)}
+            >
+              {l.label}
+            </button>
+          ))}
+        </div>
+
+        <label className="ann-field-label">メモ（任意)</label>
+        <textarea
+          className="ann-textarea"
+          value={memo}
+          rows={2}
+          placeholder="例）社保・国保の請求分"
+          onChange={(e) => setMemo(e.target.value)}
+        />
+
+        <div className="ann-modal-actions">
+          {onDelete && <button className="ann-btn ann-btn-del" onClick={onDelete}>削除</button>}
+          <div className="ann-spacer" />
+          <button className="ann-btn ann-btn-ghost" onClick={onClose}>キャンセル</button>
+          <button className="ann-btn ann-btn-save" onClick={submit}>保存</button>
         </div>
       </div>
     </div>
