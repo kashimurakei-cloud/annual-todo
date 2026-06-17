@@ -339,3 +339,17 @@ body{margin:0;background:var(--bg);}
   font-size:13px;font-weight:700;color:var(--ink);cursor:pointer;font-family:inherit;}
 .ann-wd-btn.is-on{background:var(--teal);border-color:var(--teal);color:#fff;}
 .ann-recur-hint{font-size:11px;color:var(--ink-soft);margin:8px 0 0;}
+
+/* 定期タスク：親子・まだ先 */
+.ann-recur-group{display:flex;flex-direction:column;gap:6px;}
+.ann-recur-list{gap:12px;}
+.ann-recur-kids{display:flex;flex-direction:column;gap:6px;margin-left:18px;
+  padding-left:12px;border-left:2px dashed var(--line);}
+.ann-recur-card.is-child{border-radius:10px;}
+.ann-recur-card.is-child .ann-recur-name{font-size:14px;}
+.ann-recur-card.is-later{opacity:.5;}
+.ann-recur-list-faded{opacity:.85;margin-top:8px;}
+.ann-recur-later{margin-top:16px;border-top:1px solid var(--line);padding-top:12px;}
+.ann-recur-later-toggle{background:none;border:none;color:var(--ink-soft);font-size:13px;
+  font-weight:700;cursor:pointer;font-family:inherit;padding:4px 2px;}
+.ann-recur-due.over{color:#E5484D;}

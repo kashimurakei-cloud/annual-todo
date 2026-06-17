@@ -171,7 +171,8 @@ function cleanRecur(t) {
   return {
     id: t.id || uid(),
     title: t.title || "",
-    freq: t.freq || "monthly", // monthly | yearly | everyN | weekly
+    parentId: t.parentId || "",
+    freq: t.freq || "monthly", // monthly | yearly | everyN | weekly | none
     day: t.day ?? 1,
     month: t.month ?? 1,
     interval: t.interval ?? 1,
@@ -240,10 +241,12 @@ function startOfPeriod(t, today) {
   return new Date(x.getFullYear(), x.getMonth(), 1);
 }
 function nextDue(t, today) {
+  if (t.freq === "none") return null;
   const from = t.lastDone ? rAddDays(rParse(t.lastDone), 1) : startOfPeriod(t, today);
   return occOnOrAfter(t, from);
 }
 function recurLabel(t) {
+  if (t.freq === "none") return "まとめ（期限なし)";
   if (t.freq === "weekly") return `毎週${["日", "月", "火", "水", "木", "金", "土"][t.weekday ?? 1]}曜`;
   if (t.freq === "yearly") return `毎年${t.month}/${t.day}`;
   if (t.freq === "everyN") return `${t.interval}ヶ月ごと ${t.day}日`;
@@ -435,7 +438,11 @@ export default function App() {
     setRecurEditor(null);
   };
   const deleteRecur = (id) => {
-    update((d) => { d.recurring = (d.recurring || []).filter((x) => x.id !== id); });
+    update((d) => {
+      d.recurring = (d.recurring || []).filter((x) => x.id !== id);
+      // 子は親なし（トップ)に格上げ
+      for (const x of d.recurring) if (x.parentId === id) x.parentId = "";
+    });
     setRecurEditor(null);
   };
   const completeRecur = (id) => {
@@ -711,6 +718,7 @@ export default function App() {
       {recurEditor && (
         <RecurEditor
           existing={(data.recurring || []).find((t) => t.id === recurEditor.id) || null}
+          tasks={data.recurring || []}
           onSave={saveRecur}
           onDelete={recurEditor.id ? () => deleteRecur(recurEditor.id) : null}
           onClose={() => setRecurEditor(null)}
@@ -1156,82 +1164,152 @@ function NameModal({ current, onSave, onClose }) {
   );
 }
 
+const SOON_DAYS = 14; // 期限の何日前から表示するか
+
+function RecurCard({ row, isChild, onEdit, onComplete, onUndo }) {
+  const { t, due, days } = row;
+  const WD = ["日", "月", "火", "水", "木", "金", "土"];
+  const overdue = due && days < 0;
+  const soon = due && days >= 0 && days <= SOON_DAYS;
+  const later = due && days > SOON_DAYS;
+  const lv = levelOf(t.importance);
+  const cls =
+    "ann-recur-card" +
+    (isChild ? " is-child" : "") +
+    (overdue ? " is-over" : soon ? " is-soon" : later ? " is-later" : "");
+  return (
+    <div className={cls}>
+      <button className="ann-recur-main" onClick={() => onEdit(t.id)}>
+        <div className="ann-recur-top">
+          {lv && (
+            <span className="ann-badge" style={{ background: lv.bg, color: lv.color }}>
+              {lv.label}
+            </span>
+          )}
+          <span className="ann-recur-name">{t.title || "（無題)"}</span>
+        </div>
+        <div className="ann-recur-sub">
+          <span className="ann-recur-freq">{recurLabel(t)}</span>
+          {due && (
+            <span className={"ann-recur-due" + (overdue ? " over" : soon ? " soon" : "")}>
+              {due.getMonth() + 1}/{due.getDate()}（{WD[due.getDay()]})・
+              {overdue ? `期限切れ（${-days}日経過)` : days === 0 ? "今日" : `あと${days}日`}
+            </span>
+          )}
+        </div>
+        {t.memo && <div className="ann-recur-memo">{t.memo}</div>}
+        {t.lastDone && (
+          <div className="ann-recur-last">前回完了 {t.lastDone.slice(5).replace("-", "/")}</div>
+        )}
+      </button>
+      <div className="ann-recur-actions">
+        {t.freq !== "none" && (
+          <button className="ann-recur-done" onClick={() => onComplete(t.id)}>✓ 完了</button>
+        )}
+        {t.lastDone && (
+          <button className="ann-recur-undo" onClick={() => onUndo(t.id)}>取消</button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function RecurGroup({ g, onEdit, onComplete, onUndo }) {
+  return (
+    <div className="ann-recur-group">
+      <RecurCard row={{ t: g.parent, ...g.pInfo }} isChild={false}
+        onEdit={onEdit} onComplete={onComplete} onUndo={onUndo} />
+      {g.kids.length > 0 && (
+        <div className="ann-recur-kids">
+          {g.kids.map((k) => (
+            <RecurCard key={k.t.id} row={k} isChild={true}
+              onEdit={onEdit} onComplete={onComplete} onUndo={onUndo} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function RecurView({ tasks, onAdd, onEdit, onComplete, onUndo }) {
   const today = rMid(new Date());
-  const WD = ["日", "月", "火", "水", "木", "金", "土"];
-  const rows = tasks
-    .map((t) => {
-      const due = nextDue(t, today);
-      const days = due ? Math.round((rMid(due) - today) / 86400000) : 99999;
-      return { t, due, days };
-    })
-    .sort((a, b) => (a.due && b.due ? a.due - b.due : 0));
+  const [showLater, setShowLater] = useState(false);
+
+  const info = (t) => {
+    const due = nextDue(t, today);
+    const days = due ? Math.round((rMid(due) - today) / 86400000) : null;
+    return { t, due, days };
+  };
+  const byId = Object.fromEntries(tasks.map((t) => [t.id, t]));
+  const tops = tasks.filter((t) => !t.parentId || !byId[t.parentId]);
+  const groups = tops.map((parent) => {
+    const kids = tasks
+      .filter((c) => c.parentId === parent.id)
+      .map(info)
+      .sort((a, b) => (a.due && b.due ? a.due - b.due : a.due ? -1 : 1));
+    const pInfo = info(parent);
+    const allDays = [pInfo.days, ...kids.map((k) => k.days)].filter((d) => d != null);
+    const groupDays = allDays.length ? Math.min(...allDays) : 99999;
+    return { parent, pInfo, kids, groupDays };
+  });
+  groups.sort((a, b) => a.groupDays - b.groupDays);
+
+  const active = groups.filter((g) => g.groupDays <= SOON_DAYS);
+  const later = groups.filter((g) => g.groupDays > SOON_DAYS);
 
   return (
     <div className="ann-recur">
       <div className="ann-recur-head">
         <div>
           <h2 className="ann-recur-title">定期タスク</h2>
-          <p className="ann-recur-note">毎月・毎年など、定期的にやってくる仕事。近い順に並びます。終わったら「完了」で次回へ。</p>
+          <p className="ann-recur-note">
+            期限の{SOON_DAYS}日前から表示されます。過ぎたものは「期限切れ」。終わったら「完了」で次回へ。
+          </p>
         </div>
         <button className="ann-add" onClick={onAdd}>＋ 追加</button>
       </div>
 
-      {rows.length === 0 && (
+      {groups.length === 0 && (
         <div className="ann-recur-empty">
           まだ登録がありません。「＋ 追加」から、毎月のレセプト送信や毎年の更新などを登録してください。
         </div>
       )}
 
+      {groups.length > 0 && active.length === 0 && (
+        <div className="ann-recur-empty">
+          直近{SOON_DAYS}日以内にやることはありません。先の予定は下の「まだ先の予定」から見られます。
+        </div>
+      )}
+
       <div className="ann-recur-list">
-        {rows.map(({ t, due, days }) => {
-          const overdue = days < 0;
-          const soon = days >= 0 && days <= 3;
-          const lv = levelOf(t.importance);
-          return (
-            <div
-              key={t.id}
-              className={"ann-recur-card" + (overdue ? " is-over" : soon ? " is-soon" : "")}
-            >
-              <button className="ann-recur-main" onClick={() => onEdit(t.id)}>
-                <div className="ann-recur-top">
-                  {lv && (
-                    <span className="ann-badge" style={{ background: lv.bg, color: lv.color }}>
-                      {lv.label}
-                    </span>
-                  )}
-                  <span className="ann-recur-name">{t.title || "（無題)"}</span>
-                </div>
-                <div className="ann-recur-sub">
-                  <span className="ann-recur-freq">{recurLabel(t)}</span>
-                  {due && (
-                    <span className={"ann-recur-due" + (overdue ? " over" : soon ? " soon" : "")}>
-                      {due.getMonth() + 1}/{due.getDate()}（{WD[due.getDay()]})・
-                      {overdue ? `${-days}日超過` : days === 0 ? "今日" : `あと${days}日`}
-                    </span>
-                  )}
-                </div>
-                {t.memo && <div className="ann-recur-memo">{t.memo}</div>}
-                {t.lastDone && (
-                  <div className="ann-recur-last">前回完了 {t.lastDone.slice(5).replace("-", "/")}</div>
-                )}
-              </button>
-              <div className="ann-recur-actions">
-                <button className="ann-recur-done" onClick={() => onComplete(t.id)}>✓ 完了</button>
-                {t.lastDone && (
-                  <button className="ann-recur-undo" onClick={() => onUndo(t.id)}>取消</button>
-                )}
-              </div>
-            </div>
-          );
-        })}
+        {active.map((g) => (
+          <RecurGroup key={g.parent.id} g={g}
+            onEdit={onEdit} onComplete={onComplete} onUndo={onUndo} />
+        ))}
       </div>
+
+      {later.length > 0 && (
+        <div className="ann-recur-later">
+          <button className="ann-recur-later-toggle" onClick={() => setShowLater((v) => !v)}>
+            {showLater ? "▾" : "▸"} まだ先の予定（{later.length}件)
+          </button>
+          {showLater && (
+            <div className="ann-recur-list ann-recur-list-faded">
+              {later.map((g) => (
+                <RecurGroup key={g.parent.id} g={g}
+                  onEdit={onEdit} onComplete={onComplete} onUndo={onUndo} />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
 
-function RecurEditor({ existing, onSave, onDelete, onClose }) {
+function RecurEditor({ existing, tasks, onSave, onDelete, onClose }) {
   const [title, setTitle] = useState(existing?.title || "");
+  const [parentId, setParentId] = useState(existing?.parentId || "");
   const [freq, setFreq] = useState(existing?.freq || "monthly");
   const [day, setDay] = useState(existing?.day ?? 1);
   const [month, setMonth] = useState(existing?.month ?? 1);
@@ -1249,17 +1327,24 @@ function RecurEditor({ existing, onSave, onDelete, onClose }) {
   const submit = () =>
     onSave({
       id: existing?.id ?? null,
-      title, freq,
+      title, parentId, freq,
       day: Number(day), month: Number(month), interval: Number(ivl), weekday: Number(weekday),
       importance, memo,
       baseYear: existing?.baseYear ?? null, baseMonth: existing?.baseMonth ?? null,
     });
+
+  // 親候補：トップ階層のタスク（自分自身・自分の子は除く)。2階層までに制限
+  const hasChildren = (tasks || []).some((t) => t.parentId === existing?.id);
+  const parentOptions = (tasks || []).filter(
+    (t) => !t.parentId && t.id !== existing?.id
+  );
 
   const FREQS = [
     { key: "monthly", label: "毎月" },
     { key: "yearly", label: "毎年" },
     { key: "everyN", label: "数ヶ月ごと" },
     { key: "weekly", label: "毎週" },
+    { key: "none", label: "まとめ（期限なし)" },
   ];
   const WD = ["日", "月", "火", "水", "木", "金", "土"];
 
@@ -1279,6 +1364,18 @@ function RecurEditor({ existing, onSave, onDelete, onClose }) {
           onChange={(e) => setTitle(e.target.value)}
         />
 
+        <label className="ann-field-label">親タスク（任意・グループ分け)</label>
+        {hasChildren ? (
+          <p className="ann-recur-hint">このタスクは子タスクを持っているため、親のままにします（2階層まで)。</p>
+        ) : (
+          <select className="ann-input" value={parentId} onChange={(e) => setParentId(e.target.value)}>
+            <option value="">なし（トップに表示)</option>
+            {parentOptions.map((p) => (
+              <option key={p.id} value={p.id}>{p.title || "（無題)"}</option>
+            ))}
+          </select>
+        )}
+
         <label className="ann-field-label">周期</label>
         <div className="ann-lv-pick">
           {FREQS.map((f) => (
@@ -1292,6 +1389,9 @@ function RecurEditor({ existing, onSave, onDelete, onClose }) {
           ))}
         </div>
 
+        {freq === "none" ? (
+          <p className="ann-recur-hint">「まとめ」は期限なしの見出しです。下に子タスクをぶら下げて整理できます。</p>
+        ) : (
         <div className="ann-recur-when">
           {freq === "monthly" && (
             <label className="ann-recur-when-row">
@@ -1340,6 +1440,7 @@ function RecurEditor({ existing, onSave, onDelete, onClose }) {
             <p className="ann-recur-hint">※登録した月を起点に数えます（例：今月＋3ヶ月ごと)。</p>
           )}
         </div>
+        )}
 
         <label className="ann-field-label">重要度</label>
         <div className="ann-lv-pick">
