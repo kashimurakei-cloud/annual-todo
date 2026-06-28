@@ -1029,8 +1029,8 @@ function MiniMonth({ year, m, en, events, cal, recur, onPick, onJump }) {
           {m}月 <span className="ann-mini-en">{en}</span>
         </button>
         <span className="ann-mini-count">
-          診療{openCount}{staffCount !== openCount ? `（${staffCount})` : ""}・
-          <span className="off">休{offCount}{staffOffCount !== offCount ? `（${staffOffCount})` : ""}</span>
+          診療{openCount}{staffCount !== openCount ? `(${staffCount})` : ""}・
+          <span className="off">休{offCount}{staffOffCount !== offCount ? `(${staffOffCount})` : ""}</span>
           {nenkyuCount > 0 ? `・年休${nenkyuCount}` : ""}
         </span>
       </div>
