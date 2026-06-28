@@ -72,6 +72,7 @@ const DAY_STATES = [
   { key: "holiday", label: "祝日", cls: "st-holiday" },
   { key: "nenkyu", label: "計画年休", cls: "st-nenkyu" },
   { key: "daishin", label: "代診", cls: "st-daishin" },
+  { key: "kentou", label: "検討中", cls: "st-kentou" },
 ];
 const dayStateOf = (k) => DAY_STATES.find((s) => s.key === k);
 // 日本の祝日（振替休日・国民の休日を含む)。年ごとにキャッシュ
@@ -129,6 +130,20 @@ function defaultDayState(year, m, day) {
 function calState(cal, year, m, day) {
   const v = cal && cal[year] && cal[year][`${m}-${day}`];
   return v || defaultDayState(year, m, day);
+}
+// 月ごとの集計：診療(open+代診)・休(休診+祝日)・年休・日曜診療数・スタッフ労働日
+function monthCounts(cal, year, m) {
+  const dim = new Date(year, m, 0).getDate();
+  let open = 0, off = 0, nenkyu = 0, sunClinic = 0;
+  for (let d = 1; d <= dim; d++) {
+    const s = calState(cal, year, m, d);
+    const dow = new Date(year, m - 1, d).getDay();
+    if (s === "open" || s === "daishin") { open++; if (dow === 0) sunClinic++; }
+    else if (s === "nenkyu") nenkyu++;
+    else if (s === "kentou") { /* 未定 */ }
+    else off++; // 休診・祝日
+  }
+  return { open, off, nenkyu, sunClinic, staff: open - sunClinic };
 }
 
 const dateOrder = (d) => {
@@ -941,8 +956,20 @@ function EventRow({ e, onClick, wide, myName, year, added, onCalMark, onCalUnmar
 }
 
 function CalendarView({ yd, year, cal, recur, onPick, onJump }) {
+  let aOpen = 0, aOff = 0, aNenkyu = 0, aSun = 0;
+  for (let m = 1; m <= 12; m++) {
+    const c = monthCounts(cal, year, m);
+    aOpen += c.open; aOff += c.off; aNenkyu += c.nenkyu; aSun += c.sunClinic;
+  }
+  const aStaff = aOpen - aSun;
   return (
     <div className="ann-cal-wrap">
+      <div className="ann-cal-summary">
+        <div className="ann-cal-stat"><span className="n">{aOpen}</span><span className="l">年間診療日</span></div>
+        <div className="ann-cal-stat"><span className="n">{aOff}</span><span className="l">休診日</span></div>
+        <div className="ann-cal-stat"><span className="n">{aStaff}</span><span className="l">スタッフ労働日</span></div>
+        <div className="ann-cal-stat"><span className="n">{aNenkyu}</span><span className="l">計画年休</span></div>
+      </div>
       <div className="ann-cal-legend">
         {DAY_STATES.filter((s) => s.key !== "open").map((s) => (
           <span key={s.key} className="ann-cal-leg">
@@ -986,13 +1013,8 @@ function MiniMonth({ year, m, en, events, cal, recur, onPick, onJump }) {
     }
   }
 
-  let openCount = 0, offCount = 0, nenkyuCount = 0;
-  for (let d = 1; d <= daysInMonth; d++) {
-    const s = calState(cal, year, m, d);
-    if (s === "open" || s === "daishin") openCount++;
-    else if (s === "nenkyu") nenkyuCount++;
-    else offCount++; // off, holiday
-  }
+  const { open: openCount, off: offCount, nenkyu: nenkyuCount, staff: staffCount } =
+    monthCounts(cal, year, m);
 
   const cells = [];
   for (let i = 0; i < lead; i++) cells.push(null);
@@ -1007,7 +1029,8 @@ function MiniMonth({ year, m, en, events, cal, recur, onPick, onJump }) {
           {m}月 <span className="ann-mini-en">{en}</span>
         </button>
         <span className="ann-mini-count">
-          診療{openCount}・<span className="off">休{offCount}</span>
+          診療{openCount}{staffCount !== openCount ? `（スタッフ${staffCount})` : ""}・
+          <span className="off">休{offCount}</span>
           {nenkyuCount > 0 ? `・年休${nenkyuCount}` : ""}
         </span>
       </div>

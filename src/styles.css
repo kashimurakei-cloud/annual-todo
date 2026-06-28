@@ -411,3 +411,18 @@ body{margin:0;background:var(--bg);}
   .ann-print-todo-row{font-size:11px;line-height:1.7;}
   .ann-print-todo-empty{color:#999;}
 }
+
+/* 検討中（アンバー・未定) */
+.ann-mini-cell.st-kentou{background:#FBBF24;border-color:#F59E0B;color:#3A2E05;}
+.ann-cal-swatch.st-kentou{background:#FBBF24;}
+.ann-state.st-kentou .ann-state-sw{background:#FBBF24;border-color:#F59E0B;}
+
+/* カレンダー上部の年間集計 */
+.ann-cal-summary{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:14px;}
+.ann-cal-stat{background:#fff;border:1px solid var(--line);border-radius:12px;padding:10px 8px;
+  display:flex;flex-direction:column;align-items:center;gap:2px;}
+.ann-cal-stat .n{font-size:22px;font-weight:800;color:var(--teal-d);line-height:1;font-variant-numeric:tabular-nums;}
+.ann-cal-stat .l{font-size:11px;font-weight:700;color:var(--ink-soft);text-align:center;}
+@media (max-width:560px){
+  .ann-cal-summary{grid-template-columns:repeat(2,1fr);}
+}
