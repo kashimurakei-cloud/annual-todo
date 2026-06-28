@@ -143,7 +143,7 @@ function monthCounts(cal, year, m) {
     else if (s === "kentou") { /* 未定 */ }
     else off++; // 休診・祝日
   }
-  return { open, off, nenkyu, sunClinic, staff: open - sunClinic };
+  return { open, off, nenkyu, sunClinic, staff: open - sunClinic, staffOff: off + sunClinic };
 }
 
 const dateOrder = (d) => {
@@ -1013,7 +1013,7 @@ function MiniMonth({ year, m, en, events, cal, recur, onPick, onJump }) {
     }
   }
 
-  const { open: openCount, off: offCount, nenkyu: nenkyuCount, staff: staffCount } =
+  const { open: openCount, off: offCount, nenkyu: nenkyuCount, staff: staffCount, staffOff: staffOffCount } =
     monthCounts(cal, year, m);
 
   const cells = [];
@@ -1030,7 +1030,7 @@ function MiniMonth({ year, m, en, events, cal, recur, onPick, onJump }) {
         </button>
         <span className="ann-mini-count">
           診療{openCount}{staffCount !== openCount ? `（スタッフ${staffCount})` : ""}・
-          <span className="off">休{offCount}</span>
+          <span className="off">休{offCount}{staffOffCount !== offCount ? `（スタッフ${staffOffCount})` : ""}</span>
           {nenkyuCount > 0 ? `・年休${nenkyuCount}` : ""}
         </span>
       </div>
