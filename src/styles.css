@@ -398,7 +398,7 @@ body{margin:0;background:var(--bg);}
   .ann-print-en{font-size:11px;color:#666;letter-spacing:1px;}
   .ann-print-year{margin-left:auto;font-size:13px;font-weight:700;}
   .ann-print-table{width:100%;border-collapse:collapse;}
-  .ann-print-table th{background:#222;color:#fff;font-size:10px;text-align:left;padding:3px 6px;}
+  .ann-print-table th{background:#157F71;color:#fff;font-size:10px;text-align:left;padding:3px 6px;}
   .ann-print-table td{border-bottom:1px solid #ccc;padding:2px 6px;vertical-align:top;height:18px;}
   .ann-print-table .c-d{width:42px;white-space:nowrap;font-weight:700;}
   .ann-print-table .c-wd{margin-left:4px;font-weight:400;color:#666;font-size:9px;}
@@ -516,6 +516,8 @@ body{margin:0;background:var(--bg);}
 @media print{
   /* 背景色を強制印刷・A4余白 */
   @page{size:A4 portrait;margin:8mm;}
+  .pimp{display:inline-block;border:0.6px solid;border-radius:1.5mm;font-size:0.85em;
+    font-weight:800;line-height:1.25;padding:0 1mm;margin-right:1mm;vertical-align:baseline;}
   .ann-print, .ann-print *{
     -webkit-print-color-adjust:exact !important;
     print-color-adjust:exact !important;
@@ -582,7 +584,7 @@ body{margin:0;background:var(--bg);}
   .ann-c3-month{flex:1 1 0;min-height:0;margin-bottom:2.5mm;
     border:1.2px solid #222;border-radius:2mm;overflow:hidden;
     display:flex;flex-direction:column;}
-  .ann-c3-band{flex:0 0 auto;background:#1f2933;color:#fff;display:flex;
+  .ann-c3-band{flex:0 0 auto;background:#157F71;color:#fff;display:flex;
     align-items:baseline;gap:1mm;padding:1mm 3mm;}
   .ann-c3-m{font-size:14px;font-weight:900;}
   .ann-c3-gatsu{font-size:9px;font-weight:700;}
@@ -608,7 +610,7 @@ body{margin:0;background:var(--bg);}
   /* --- 定期タスク一覧 --- */
   .ann-prec{page-break-after:auto;}
   .ann-prec-table{width:100%;border-collapse:collapse;margin-top:2mm;}
-  .ann-prec-table th{background:#222;color:#fff;font-size:9px;padding:1.2mm 1.5mm;text-align:left;}
+  .ann-prec-table th{background:#157F71;color:#fff;font-size:9px;padding:1.2mm 1.5mm;text-align:left;}
   .ann-prec-table th.c-m,.ann-prec-table td.c-m{width:6mm;text-align:center;}
   .ann-prec-table td{border-bottom:0.5px solid #ccc;font-size:9.5px;padding:1.2mm 1.5mm;}
   .ann-prec-table tr.is-child td.c-title{padding-left:4mm;color:#333;}
@@ -616,4 +618,38 @@ body{margin:0;background:var(--bg);}
   .ann-prec-table .c-memo{font-size:8px;color:#777;}
   .ann-prec-table td.c-m{font-size:11px;}
   .ann-prec-note{font-size:8.5px;color:#666;margin-top:2mm;}
+}
+
+/* ===== 完了トースト ===== */
+.ann-toast{
+  position:fixed;left:50%;bottom:24px;transform:translateX(-50%);
+  background:#1f2933;color:#fff;border-radius:999px;
+  padding:10px 10px 10px 18px;font-size:13.5px;font-weight:700;
+  display:flex;align-items:center;gap:12px;
+  box-shadow:0 6px 20px rgba(0,0,0,0.25);z-index:200;
+  animation:annToastIn 0.18s ease;
+}
+@keyframes annToastIn{from{transform:translate(-50%,12px);opacity:0;}to{transform:translate(-50%,0);opacity:1;}}
+.ann-toast-undo{
+  background:#0E9F8E;color:#fff;border:none;border-radius:999px;
+  padding:6px 14px;font-size:12.5px;font-weight:800;cursor:pointer;
+}
+
+/* ===== 月見出しの固定表示 ===== */
+.ann-month-head{
+  position:sticky;top:0;z-index:5;
+  background:var(--bg,#F5F7F8);
+  padding:6px 0;margin-bottom:5px;
+}
+
+/* ===== 日ピッカーの予定追加ボタン ===== */
+.ann-cp-add{
+  display:block;width:100%;margin-top:12px;
+  background:#0E9F8E;color:#fff;border:none;border-radius:10px;
+  padding:11px;font-size:14px;font-weight:800;cursor:pointer;
+}
+
+/* ===== 印刷: 日別行の定期タスク ===== */
+@media print{
+  .ann-print-ev-todo{color:#333;}
 }

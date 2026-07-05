@@ -370,6 +370,8 @@ export default function App() {
   const [query, setQuery] = useState("");
   const [showSearch, setShowSearch] = useState(false);
   const [showPrint, setShowPrint] = useState(false);
+  const [toast, setToast] = useState(null); // {msg, undoId}
+  const toastTimer = useRef(null);
   const [printMode, setPrintMode] = useState({ mode: "monthly", startM: 1 });
 
   const doPrint = (mode, startM) => {
@@ -467,12 +469,16 @@ export default function App() {
   };
 
   useEffect(() => {
-    if (view === "list" && pendingScroll != null) {
-      const el = document.getElementById("ann-m" + pendingScroll);
-      if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
-      setPendingScroll(null);
-    }
-  }, [view, pendingScroll]);
+    if (view !== "list") return;
+    // 指定があればそこへ、なければ今月へ自動スクロール
+    const target = pendingScroll != null
+      ? pendingScroll
+      : (activeYear === curYear ? curMonth : null);
+    if (target == null) return;
+    const el = document.getElementById("ann-m" + target);
+    if (el) el.scrollIntoView?.({ behavior: pendingScroll != null ? "smooth" : "auto", block: "start" });
+    if (pendingScroll != null) setPendingScroll(null);
+  }, [view, pendingScroll]); // eslint-disable-line
 
   if (!data) {
     return (
@@ -686,6 +692,7 @@ export default function App() {
     setRecurEditor(null);
   };
   const completeRecur = (id) => {
+    const task = (data.recurring || []).find((x) => x.id === id);
     update((d) => {
       const t = (d.recurring || []).find((x) => x.id === id);
       if (!t) return;
@@ -695,6 +702,10 @@ export default function App() {
         t.doneLog = [...(t.doneLog || []), rYmd(due)]; // 実施率の記録
       }
     });
+    // 完了トースト（取消付き）
+    clearTimeout(toastTimer.current);
+    setToast({ msg: `✓ 「${task?.title || "タスク"}」を完了にしました`, undoId: id });
+    toastTimer.current = setTimeout(() => setToast(null), 3500);
   };
   const undoRecur = (id) => {
     update((d) => {
@@ -1082,6 +1093,11 @@ export default function App() {
           day={calPick.day}
           current={calState(data.cal || {}, activeYear, calPick.m, calPick.day)}
           onSelect={(state) => { setDayState(activeYear, calPick.m, calPick.day, state); setCalPick(null); }}
+          onAddEvent={() => {
+            const dd = `${String(calPick.m).padStart(2, "0")}/${String(calPick.day).padStart(2, "0")}`;
+            setCalPick(null);
+            setEditor({ month: calPick.m, id: null, presetDate: dd });
+          }}
           onClose={() => setCalPick(null)}
         />
       )}
@@ -1090,6 +1106,7 @@ export default function App() {
         <Editor
           month={editor.month}
           year={activeYear}
+          presetDate={editor.presetDate}
           existing={editing}
           onSave={saveEvent}
           onSoftDelete={editing && !editing.deletedAt ? () => softDelete(editor.month, editor.id) : null}
@@ -1109,6 +1126,22 @@ export default function App() {
 
       {showName && (
         <NameModal current={myName} onSave={saveName} onClose={() => setShowName(false)} />
+      )}
+
+      {toast && (
+        <div className="ann-toast">
+          <span>{toast.msg}</span>
+          <button
+            className="ann-toast-undo"
+            onClick={() => {
+              undoRecur(toast.undoId);
+              clearTimeout(toastTimer.current);
+              setToast(null);
+            }}
+          >
+            取消
+          </button>
+        </div>
       )}
 
       <footer className="ann-foot">
@@ -1369,7 +1402,7 @@ function MiniMonth({ year, m, en, events, cal, recur, onPick, onJump }) {
   );
 }
 
-function CalPicker({ year, m, day, current, onSelect, onClose }) {
+function CalPicker({ year, m, day, current, onSelect, onAddEvent, onClose }) {
   const dow = new Date(year, m - 1, day).getDay();
   const wd = ["日", "月", "火", "水", "木", "金", "土"][dow];
   return (
@@ -1392,6 +1425,9 @@ function CalPicker({ year, m, day, current, onSelect, onClose }) {
             </button>
           ))}
         </div>
+        <button className="ann-cp-add" onClick={onAddEvent}>
+          ＋ この日に予定を追加
+        </button>
       </div>
     </div>
   );
@@ -1458,9 +1494,9 @@ function ClinicSummary({ yd, year }) {
   );
 }
 
-function Editor({ month, existing, onSave, onSoftDelete, onRestore, onHardDelete, onClose, year }) {
+function Editor({ month, existing, onSave, onSoftDelete, onRestore, onHardDelete, onClose, year, presetDate }) {
   const [importance, setImportance] = useState(existing?.importance ?? "");
-  const [date, setDate] = useState(existing?.date ?? "");
+  const [date, setDate] = useState(existing?.date ?? presetDate ?? "");
   const [text, setText] = useState(existing?.text ?? "");
   const [clinic, setClinic] = useState(existing?.clinic ?? false);
   const [annual, setAnnual] = useState(existing?.annual ?? false);
@@ -2131,6 +2167,11 @@ function PrintMenu({ year, onPrint, onClose }) {
   );
 }
 
+/* 印刷用: 重要度の色 */
+const P_IMP = { "高": "#C7402F", "中": "#C77100", "低": "#5B6873", "家": "#0E9F8E" };
+const PImp = ({ imp }) =>
+  imp ? <span className="pimp" style={{ color: P_IMP[imp] || "#333", borderColor: P_IMP[imp] || "#333" }}>{imp}</span> : null;
+
 /* 日付にあたる予定を取り出す(印刷共通) */
 function printEvForDay(events, m, d) {
   return (events || []).filter((e) => {
@@ -2168,9 +2209,9 @@ function PrintList({ yd, year, cal }) {
                         {e.date || "未定"}{wi ? `(${wi.wd})` : ""}
                       </span>
                       <span className="ann-plist-text">
-                        {e.importance && `[${e.importance}] `}
-                        {e.clinic && "🏥"}
-                        {e.text}
+                        <PImp imp={e.importance} />
+                        {e.clinic && <span className="pimp" style={{ color: "#0E9F8E", borderColor: "#0E9F8E" }}>診</span>}
+                        <span style={e.importance ? { color: P_IMP[e.importance] } : undefined}>{e.text}</span>
                       </span>
                     </div>
                   );
@@ -2252,8 +2293,12 @@ function PrintYearCal({ yd, year, cal }) {
                 <div className="ann-ycal-evs">
                   {evs.length === 0 && <span className="ann-ycal-ev none">予定なし</span>}
                   {evs.map((e) => (
-                    <span className="ann-ycal-ev" key={e.id}>
-                      <b>{e.date || "未定"}</b> {e.importance && `[${e.importance}]`}{e.text}
+                    <span
+                      className="ann-ycal-ev"
+                      key={e.id}
+                      style={e.importance ? { color: P_IMP[e.importance] } : undefined}
+                    >
+                      <b>{e.date || "未定"}</b> {e.text}
                     </span>
                   ))}
                 </div>
@@ -2331,7 +2376,13 @@ function PrintCal3({ yd, year, cal, startM }) {
                           <td key={di} className={cls}>
                             <span className="ann-c3-d">{d}</span>
                             {evs.slice(0, 3).map((e) => (
-                              <span className="ann-c3-ev" key={e.id}>{e.text}</span>
+                              <span
+                                className="ann-c3-ev"
+                                key={e.id}
+                                style={e.importance ? { color: P_IMP[e.importance], fontWeight: 700 } : undefined}
+                              >
+                                {e.text}
+                              </span>
                             ))}
                             {evs.length > 3 && <span className="ann-c3-ev">他{evs.length - 3}件</span>}
                           </td>
@@ -2390,7 +2441,7 @@ function PrintRecur({ tasks, year }) {
                 <tr key={t.id} className={child ? "is-child" : ""}>
                   <td className="c-title">
                     {child ? "└ " : ""}
-                    {t.importance && `[${t.importance}] `}
+                    <PImp imp={t.importance} />
                     {t.title}
                     {t.memo && <span className="c-memo">　{t.memo}</span>}
                   </td>
@@ -2435,19 +2486,26 @@ function PrintSheet({ yd, year, tasks, cal }) {
             </div>
             <table className="ann-print-table">
               <thead>
-                <tr><th className="c-d">日</th><th>予定</th></tr>
+                <tr><th className="c-d">日</th><th>予定・やること</th></tr>
               </thead>
               <tbody>
                 {Array.from({ length: dim }, (_, i) => i + 1).map((d) => {
                   const dow = new Date(year, m - 1, d).getDay();
                   const evs = evForDay(yd.months[m], m, d);
+                  const todos = todo.filter((x) => x.day === d);
                   return (
                     <tr key={d} className={dow === 0 ? "sun" : dow === 6 ? "sat" : ""}>
                       <td className="c-d">{d}<span className="c-wd">{WD[dow]}</span></td>
                       <td>
                         {evs.map((e) => (
                           <span key={e.id} className="ann-print-ev">
-                            {e.importance && `[${e.importance}] `}{e.text}
+                            <PImp imp={e.importance} />
+                            <span style={e.importance ? { color: P_IMP[e.importance] } : undefined}>{e.text}</span>
+                          </span>
+                        ))}
+                        {todos.map((x) => (
+                          <span key={x.id + "-" + x.day} className="ann-print-ev ann-print-ev-todo">
+                            ☐ <PImp imp={x.importance} />🔁{x.title}
                           </span>
                         ))}
                       </td>
@@ -2456,15 +2514,6 @@ function PrintSheet({ yd, year, tasks, cal }) {
                 })}
               </tbody>
             </table>
-            <div className="ann-print-todo">
-              <div className="ann-print-todo-h">今月のやること（定期)</div>
-              {todo.length === 0 && <div className="ann-print-todo-empty">―</div>}
-              {todo.map((x) => (
-                <div className="ann-print-todo-row" key={x.id + "-" + x.day}>
-                  ☐ {m}/{x.day}　{x.importance && `[${x.importance}] `}{x.title}
-                </div>
-              ))}
-            </div>
           </div>
         );
       })}

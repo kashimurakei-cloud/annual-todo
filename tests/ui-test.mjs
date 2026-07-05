@@ -335,6 +335,47 @@ try {
   await wait(500);
   const prec = rootEl.querySelector(".ann-prec-table")?.innerHTML || "";
   console.log("PrintRecur table:", prec.includes("レセプト送信") && prec.includes("☐"));
+
+  /* ---------- 月別ページ: 定期が日別行に☐で入る ---------- */
+  click([...rootEl.querySelectorAll("button")].find((b) => b.textContent.includes("🖨")));
+  await wait(200);
+  click([...rootEl.querySelectorAll(".ann-print-item")].find((b) => b.textContent.includes("月別ページ")));
+  await wait(500);
+  const monthlyTable = rootEl.querySelector(".ann-print-table")?.parentElement?.innerHTML || "";
+  console.log("=== MONTHLY PRINT ===");
+  console.log("Recur in day rows with ☐:", monthlyTable.includes("☐") && monthlyTable.includes("🔁レセプト送信"));
+
+  /* ---------- 完了トースト+取消 ---------- */
+  console.log("=== TOAST ===");
+  click([...rootEl.querySelectorAll(".ann-viewtab")].find((b) => b.textContent.includes("定期タスク")));
+  await wait(300);
+  const doneBtn = [...rootEl.querySelectorAll(".ann-recur-done")][0];
+  click(doneBtn);
+  await wait(300);
+  html = rootEl.innerHTML;
+  console.log("Toast shown:", html.includes("を完了にしました") && !!rootEl.querySelector(".ann-toast-undo"));
+  click(rootEl.querySelector(".ann-toast-undo"));
+  await wait(300);
+  console.log("Toast undo hides:", !rootEl.querySelector(".ann-toast"));
+
+  /* ---------- カレンダーの日タップ→予定追加 ---------- */
+  console.log("=== CAL ADD ===");
+  click([...rootEl.querySelectorAll(".ann-viewtab")].find((b) => b.textContent.includes("カレンダー")));
+  await wait(300);
+  // 15日あたりのセルをタップ
+  const dayBtn = [...rootEl.querySelectorAll("button")].find(
+    (b) => b.textContent.trim() === "15" && b.className.includes("mm")
+  ) || [...rootEl.querySelectorAll("button")].find((b) => b.textContent.trim() === "15");
+  click(dayBtn);
+  await wait(250);
+  html = rootEl.innerHTML;
+  console.log("CalPicker add button:", html.includes("この日に予定を追加"));
+  click(rootEl.querySelector(".ann-cp-add"));
+  await wait(250);
+  const dateInput = [...rootEl.querySelectorAll(".ann-input")].find((i) => /\d{2}\/15/.test(i.value));
+  console.log("Editor opens with preset date:", !!dateInput);
+  click([...rootEl.querySelectorAll(".ann-btn-ghost")].find((b) => b.textContent === "キャンセル"));
+  await wait(200);
 } catch (e) {
   console.error = origError;
   console.log("=== RENDER FAILED ===");
