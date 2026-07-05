@@ -198,6 +198,7 @@ function cleanRecur(t) {
     memo: t.memo || "",
     author: t.author || "",
     lastDone: t.lastDone || "",
+    doneLog: Array.isArray(t.doneLog) ? t.doneLog : [], // 完了履歴（実施率用）
     createdAt: t.createdAt || 0,
   };
 }
@@ -299,6 +300,23 @@ function recurInMonth(tasks, year, m) {
   return out.sort((a, b) => a.day - b.day);
 }
 
+/* 日付(MM/DD)から「第◯ ◯曜」を求める。例: 2026/03/14(土) → {nth:2, dow:6} */
+function nthWeekdayOf(dateStr, year) {
+  const wi = weekdayInfo(dateStr, year);
+  if (!wi) return null;
+  const m = String(dateStr).match(/(\d{1,2})\D+(\d{1,2})/);
+  const day = Number(m[2]);
+  return { month: Number(m[1]), nth: Math.ceil(day / 7), dow: wi.dow };
+}
+/* 指定年の「m月 第nth dow曜」の日付(MM/DD)を返す。第5がない年は最終週に丸める */
+function dateOfNthWeekday(year, month, nth, dow) {
+  const first = new Date(year, month - 1, 1);
+  let day = 1 + ((dow - first.getDay() + 7) % 7) + (nth - 1) * 7;
+  const dim = new Date(year, month, 0).getDate();
+  while (day > dim) day -= 7;
+  return `${String(month).padStart(2, "0")}/${String(day).padStart(2, "0")}`;
+}
+
 function cleanEvent(e) {
   const o = {
     id: e.id || uid(),
@@ -312,6 +330,12 @@ function cleanEvent(e) {
   if (e.deletedAt) o.deletedAt = e.deletedAt;
   if (e.auto) { o.auto = true; o.calDay = e.calDay || ""; }
   if (e.tag) o.tag = e.tag;
+  if (e.annual) {
+    o.annual = true;
+    o.annualRule = e.annualRule || "same"; // same | nthWeekday | tbd
+  }
+  if (e.pendingDate) o.pendingDate = true; // 恒例なのに日付未定
+  if (e.copiedFrom) o.copiedFrom = e.copiedFrom;
   return o;
 }
 
@@ -343,6 +367,8 @@ export default function App() {
   const [recurEditor, setRecurEditor] = useState(null); // {id} or {id:null}
   const swipeRef = useRef({ x: 0, y: 0 });
   const [synced, setSynced] = useState(false);
+  const [query, setQuery] = useState("");
+  const [showSearch, setShowSearch] = useState(false);
   const [myName, setMyName] = useState(() => localStorage.getItem(NAME_KEY) || "");
   const [showName, setShowName] = useState(false);
   const [calAdded, setCalAdded] = useState(() => {
@@ -405,10 +431,24 @@ export default function App() {
     }, 350);
   }, []);
 
+  // ↩️ 操作の取り消し（直近10回分）
+  const undoStack = useRef([]);
+  const [undoCount, setUndoCount] = useState(0);
+
   const update = (mut) => {
+    undoStack.current.push(structuredClone(data));
+    if (undoStack.current.length > 10) undoStack.current.shift();
+    setUndoCount(undoStack.current.length);
     const next = structuredClone(data);
     mut(next);
     persist(next);
+  };
+
+  const undoLast = () => {
+    const prev = undoStack.current.pop();
+    if (!prev) return;
+    setUndoCount(undoStack.current.length);
+    persist(prev);
   };
 
   const saveName = (name) => {
@@ -465,6 +505,107 @@ export default function App() {
     return n;
   })();
 
+  // 恒例行事（annual）を翌年へ複製する。二重展開はcopiedFromで防ぐ
+  const rolloverAnnual = () => {
+    const src = data.years[activeYear];
+    if (!src) return;
+    const ny = activeYear + 1;
+    let created = 0, skipped = 0;
+    update((d) => {
+      if (!d.years[ny]) {
+        d.years[ny] = emptyYear();
+        if (!d.yearOrder.includes(ny)) d.yearOrder = [...d.yearOrder, ny].sort((a, b) => a - b);
+      }
+      for (let m = 1; m <= 12; m++) {
+        for (const e of src.months[m]) {
+          if (!e.annual || e.deletedAt || e.auto) continue;
+          // すでに展開済みならスキップ
+          const exists = d.years[ny].months[m].some((x) => x.copiedFrom === e.id);
+          if (exists) { skipped++; continue; }
+          const rule = e.annualRule || "same";
+          let date = "", pending = false;
+          if (rule === "same") date = e.date || "";
+          else if (rule === "nthWeekday") {
+            const nw = nthWeekdayOf(e.date, activeYear);
+            date = nw ? dateOfNthWeekday(ny, nw.month, nw.nth, nw.dow) : "";
+            if (!nw) pending = true;
+          } else pending = true; // tbd
+          if (!date && rule !== "tbd" && !e.date) pending = true;
+          const copy = {
+            id: uid(), importance: e.importance || "", date, text: e.text || "",
+            author: myName, clinic: !!e.clinic, createdAt: Date.now(),
+            annual: true, annualRule: rule, copiedFrom: e.id,
+          };
+          if (pending || rule === "tbd") copy.pendingDate = true;
+          d.years[ny].months[m].push(copy);
+          created++;
+        }
+        sortByDate(d.years[ny].months[m]);
+      }
+    });
+    alert(
+      created > 0
+        ? `${ny}年へ ${created}件の恒例行事を展開しました。` +
+          (skipped ? `（${skipped}件は展開済みのためスキップ）` : "") +
+          `\n日付未定のものはホームに表示されます。`
+        : skipped
+          ? `すべて展開済みでした（${skipped}件）。`
+          : `🔁マークの付いた恒例行事がありません。\n予定を開いて「毎年恒例」にチェックを入れてください。`
+    );
+  };
+
+  // 📤 .ics書き出し（表示中の年の予定＋定期タスクの発生日を終日予定として）
+  const exportIcs = () => {
+    const pad = (n) => String(n).padStart(2, "0");
+    const lines = [
+      "BEGIN:VCALENDAR", "VERSION:2.0",
+      "PRODID:-//annual-todo//JP", "CALSCALE:GREGORIAN",
+    ];
+    const esc = (s) => String(s).replace(/\\/g, "\\\\").replace(/;/g, "\\;").replace(/,/g, "\\,").replace(/\n/g, "\\n");
+    const pushEv = (uidStr, y, m, d, summary, endYmd) => {
+      lines.push("BEGIN:VEVENT");
+      lines.push(`UID:${uidStr}@annual-todo`);
+      lines.push(`DTSTART;VALUE=DATE:${y}${pad(m)}${pad(d)}`);
+      if (endYmd) lines.push(`DTEND;VALUE=DATE:${endYmd}`);
+      lines.push(`SUMMARY:${esc(summary)}`);
+      lines.push("END:VEVENT");
+    };
+    const ydx = data.years[activeYear];
+    if (ydx) {
+      for (let m = 1; m <= 12; m++) {
+        for (const e of ydx.months[m]) {
+          if (e.deletedAt || !e.date) continue;
+          const dates = rangeDates(e.date);
+          if (dates.length >= 2) {
+            // 連休（複数日）: 最初〜最後
+            const first = dates[0], last = dates[dates.length - 1];
+            const end = new Date(activeYear, last.m - 1, last.d + 1); // DTENDは翌日
+            pushEv(e.id, activeYear, first.m, first.d,
+              (e.importance ? `[${e.importance}] ` : "") + e.text,
+              `${end.getFullYear()}${pad(end.getMonth() + 1)}${pad(end.getDate())}`);
+          } else {
+            const mm = String(e.date).match(/(\d{1,2})\D+(\d{1,2})/);
+            if (!mm) continue;
+            pushEv(e.id, activeYear, Number(mm[1]), Number(mm[2]),
+              (e.importance ? `[${e.importance}] ` : "") + e.text);
+          }
+        }
+      }
+    }
+    for (let m = 1; m <= 12; m++) {
+      for (const x of recurInMonth(data.recurring || [], activeYear, m)) {
+        pushEv(`${x.id}-${m}-${x.day}`, activeYear, m, x.day, `🔁 ${x.title}`);
+      }
+    }
+    lines.push("END:VCALENDAR");
+    const blob = new Blob([lines.join("\r\n")], { type: "text/calendar" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `annual-${activeYear}.ics`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
+
   const addYear = () => {
     const last = Math.max(...data.yearOrder);
     const ny = last + 1;
@@ -475,17 +616,34 @@ export default function App() {
     setActiveYear(ny);
   };
 
-  const saveEvent = ({ month, id, importance, date, text, clinic }) => {
+  const saveEvent = ({ month, id, importance, date, text, clinic, annual, annualRule }) => {
     if (!text.trim() && !date.trim()) { setEditor(null); return; }
     update((d) => {
       const y = d.years[activeYear];
       const target = month === "next" ? y.nextYear : y.months[month];
+      const extra = {
+        annual: !!annual,
+        annualRule: annual ? (annualRule || "same") : "",
+        // 日付を入れたら「未定」状態は解除
+        pendingDate: undefined,
+      };
       if (id) {
         const i = target.findIndex((e) => e.id === id);
-        if (i >= 0) target[i] = { ...target[i], importance, date, text, clinic: !!clinic };
+        if (i >= 0) {
+          const prev = target[i];
+          target[i] = { ...prev, importance, date, text, clinic: !!clinic, ...extra };
+          if (!annual) { delete target[i].annual; delete target[i].annualRule; }
+          if (date.trim()) delete target[i].pendingDate;
+          else if (prev.pendingDate) target[i].pendingDate = true;
+          delete target[i].undefined;
+        }
       } else {
-        target.push(ev(importance, date, text, myName, clinic));
+        const e2 = ev(importance, date, text, myName, clinic);
+        if (annual) { e2.annual = true; e2.annualRule = annualRule || "same"; }
+        target.push(e2);
       }
+      // pendingDate: undefinedの掃除
+      for (const e3 of target) { if (e3.pendingDate === undefined) delete e3.pendingDate; }
       sortByDate(target);
     });
     setEditor(null);
@@ -524,13 +682,20 @@ export default function App() {
       const t = (d.recurring || []).find((x) => x.id === id);
       if (!t) return;
       const due = nextDue(t, new Date());
-      if (due) t.lastDone = rYmd(due);
+      if (due) {
+        t.lastDone = rYmd(due);
+        t.doneLog = [...(t.doneLog || []), rYmd(due)]; // 実施率の記録
+      }
     });
   };
   const undoRecur = (id) => {
     update((d) => {
       const t = (d.recurring || []).find((x) => x.id === id);
-      if (t) t.lastDone = "";
+      if (!t) return;
+      const log = [...(t.doneLog || [])];
+      log.pop();
+      t.doneLog = log;
+      t.lastDone = log.length ? log[log.length - 1] : "";
     });
   };
 
@@ -626,6 +791,35 @@ export default function App() {
 
   const visible = (list) =>
     filter ? list.filter((e) => e.importance === filter) : list;
+
+  // 🔍 横断検索（全年の予定＋定期タスク）
+  const searchResults = (() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return null;
+    const out = [];
+    for (const yKey of data.yearOrder) {
+      const ydx = data.years[yKey];
+      if (!ydx) continue;
+      for (let m = 1; m <= 12; m++) {
+        for (const e of ydx.months[m]) {
+          if (e.deletedAt) continue;
+          if ((e.text || "").toLowerCase().includes(q)) {
+            out.push({ kind: "event", year: yKey, m, e });
+          }
+        }
+      }
+      for (const e of ydx.nextYear) {
+        if (e.deletedAt) continue;
+        if ((e.text || "").toLowerCase().includes(q)) out.push({ kind: "next", year: yKey, e });
+      }
+    }
+    for (const t of data.recurring || []) {
+      if ((t.title || "").toLowerCase().includes(q) || (t.memo || "").toLowerCase().includes(q)) {
+        out.push({ kind: "recur", t });
+      }
+    }
+    return out.slice(0, 30);
+  })();
   const totalCount = Object.values(yd.months)
     .reduce((a, l) => a + l.filter((e) => !e.deletedAt).length, 0);
 
@@ -644,6 +838,17 @@ export default function App() {
             </div>
             <button className="ann-namechip" onClick={() => setShowName(true)}>
               {myName ? `👤 ${myName}` : "名前を設定"}
+            </button>
+            <button className="ann-printbtn" onClick={() => { setShowSearch((v) => !v); setQuery(""); }} title="検索">
+              🔍
+            </button>
+            {undoCount > 0 && (
+              <button className="ann-printbtn" onClick={undoLast} title="直前の操作を取り消す">
+                ↩️
+              </button>
+            )}
+            <button className="ann-printbtn" onClick={exportIcs} title={`${activeYear}年をカレンダー形式で書き出し`}>
+              📤
             </button>
             <button className="ann-printbtn" onClick={() => window.print()} title={`${activeYear}年を印刷`}>
               🖨 印刷
@@ -693,6 +898,46 @@ export default function App() {
             定期タスク
           </button>
         </div>
+
+        {showSearch && (
+          <div className="ann-searchbar">
+            <input
+              className="ann-input ann-search-input"
+              value={query}
+              autoFocus
+              placeholder="🔍 予定・定期タスクを検索（全年から）"
+              onChange={(e) => setQuery(e.target.value)}
+            />
+            {searchResults && (
+              <div className="ann-search-results">
+                {searchResults.length === 0 && <div className="ann-empty ann-empty-wide">見つかりませんでした</div>}
+                {searchResults.map((r, i) => (
+                  <button
+                    key={i}
+                    className="ann-search-row"
+                    onClick={() => {
+                      setShowSearch(false); setQuery("");
+                      if (r.kind === "recur") { setView("recur"); }
+                      else {
+                        setActiveYear(r.year);
+                        if (r.kind === "event") { setView("list"); setPendingScroll(r.m); }
+                        else setView("list");
+                      }
+                    }}
+                  >
+                    {r.kind === "recur" ? (
+                      <><span className="ann-sr-tag">🔁 定期</span>{r.t.title}</>
+                    ) : r.kind === "next" ? (
+                      <><span className="ann-sr-tag">{r.year}年 来年欄</span>{r.e.date && `${r.e.date}　`}{r.e.text}</>
+                    ) : (
+                      <><span className="ann-sr-tag">{r.year}年{r.m}月</span>{r.e.date && `${r.e.date}　`}{r.e.text}</>
+                    )}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         <div className="ann-legend">
           <button
@@ -788,6 +1033,9 @@ export default function App() {
         <div className="ann-next-head">
           <span className="ann-next-title">{activeYear + 1}年に向けて</span>
           <span className="ann-next-sub">NEXT YEAR</span>
+          <button className="ann-rollover" onClick={rolloverAnnual}>
+            🔁 恒例行事を{activeYear + 1}年へ展開
+          </button>
         </div>
         <div className="ann-next-list">
           {visible(yd.nextYear).length === 0 && (
@@ -833,6 +1081,7 @@ export default function App() {
       {editor && (
         <Editor
           month={editor.month}
+          year={activeYear}
           existing={editing}
           onSave={saveEvent}
           onSoftDelete={editing && !editing.deletedAt ? () => softDelete(editor.month, editor.id) : null}
@@ -886,13 +1135,27 @@ function gcalUrl(e, year) {
 }
 
 function EventRow({ e, onClick, wide, myName, year, added, onCalMark, onCalUnmark }) {
+  // 期限の近さで色を変える（今年の予定のみ）
+  const escalation = (() => {
+    if (e.deletedAt || !e.date) return "";
+    const nowY = new Date().getFullYear();
+    if (year !== nowY) return "";
+    const mm = String(e.date).match(/(\d{1,2})\D+(\d{1,2})/);
+    if (!mm) return "";
+    const due = rMid(new Date(nowY, Number(mm[1]) - 1, Number(mm[2])));
+    const days = Math.round((due - rMid(new Date())) / 86400000);
+    if (days === 0) return " is-due0";
+    if (days > 0 && days <= 3) return " is-due3";
+    if (days < 0) return " is-pastday";
+    return "";
+  })();
   const lv = levelOf(e.importance);
   const isOther = e.author && e.author !== myName;
   const isDeleted = !!e.deletedAt;
   const isRange = isRangeDate(e.date);
   const cal = !isDeleted && e.date ? gcalUrl(e, year) : null;
   const wi = e.date && !isRange ? weekdayInfo(e.date, year) : null; // 連休のときは曜日を出さない
-  let cls = "ann-ev";
+  let cls = "ann-ev" + escalation;
   if (wide) cls += " ann-ev-wide";
   if (isOther) cls += " ann-ev-other";
   if (isDeleted) cls += " ann-ev-deleted";
@@ -927,8 +1190,13 @@ function EventRow({ e, onClick, wide, myName, year, added, onCalMark, onCalUnmar
               )}
             </span>
           )
-          : <span className="ann-undated">未定</span>}
-        <span className="ann-text">{e.text}</span>
+          : <span className={"ann-undated" + (e.pendingDate ? " is-pending" : "")}>
+              {e.pendingDate ? "📌 日付未定" : "未定"}
+            </span>}
+        <span className="ann-text">
+          {e.annual && <span className="ann-annual-mark" title="毎年恒例">🔁</span>}
+          {e.text}
+        </span>
         {e.author && <span className="ann-author">{e.author}</span>}
       </button>
       {cal && (added ? (
@@ -1160,11 +1428,13 @@ function ClinicSummary({ yd, year }) {
   );
 }
 
-function Editor({ month, existing, onSave, onSoftDelete, onRestore, onHardDelete, onClose }) {
+function Editor({ month, existing, onSave, onSoftDelete, onRestore, onHardDelete, onClose, year }) {
   const [importance, setImportance] = useState(existing?.importance ?? "");
   const [date, setDate] = useState(existing?.date ?? "");
   const [text, setText] = useState(existing?.text ?? "");
   const [clinic, setClinic] = useState(existing?.clinic ?? false);
+  const [annual, setAnnual] = useState(existing?.annual ?? false);
+  const [annualRule, setAnnualRule] = useState(existing?.annualRule ?? "same");
 
   useEffect(() => {
     const onKey = (e) => e.key === "Escape" && onClose();
@@ -1173,7 +1443,10 @@ function Editor({ month, existing, onSave, onSoftDelete, onRestore, onHardDelete
   }, [onClose]);
 
   const title = month === "next" ? "来年に向けて" : `${month}月の予定`;
-  const submit = () => onSave({ month, id: existing?.id ?? null, importance, date, text, clinic });
+  const submit = () =>
+    onSave({ month, id: existing?.id ?? null, importance, date, text, clinic, annual, annualRule });
+  const nw = nthWeekdayOf(date, year || new Date().getFullYear());
+  const WDJ = ["日", "月", "火", "水", "木", "金", "土"];
   const isDeleted = existing?.deletedAt;
 
   return (
@@ -1228,6 +1501,32 @@ function Editor({ month, existing, onSave, onSoftDelete, onRestore, onHardDelete
           onChange={(e) => setText(e.target.value)}
         />
 
+        {month !== "next" && (
+          <>
+            <label className="ann-annual-toggle">
+              <input type="checkbox" checked={annual} onChange={(e) => setAnnual(e.target.checked)} />
+              🔁 毎年恒例の行事（「来年へ展開」でコピーされます）
+            </label>
+            {annual && (
+              <div className="ann-annual-rules">
+                <div className="ann-field-label">来年の日付の決め方</div>
+                <label className="ann-annual-rule">
+                  <input type="radio" checked={annualRule === "same"} onChange={() => setAnnualRule("same")} />
+                  同じ日付（{date || "MM/DD"}）
+                </label>
+                <label className={"ann-annual-rule" + (nw ? "" : " is-dim")}>
+                  <input type="radio" disabled={!nw} checked={annualRule === "nthWeekday"} onChange={() => setAnnualRule("nthWeekday")} />
+                  同じ「第{nw ? nw.nth : "◯"} {nw ? WDJ[nw.dow] : "◯"}曜日」{nw ? "" : "（日付を入れると選べます）"}
+                </label>
+                <label className="ann-annual-rule">
+                  <input type="radio" checked={annualRule === "tbd"} onChange={() => setAnnualRule("tbd")} />
+                  未定（日付なしでコピーし、ホームでリマインド）
+                </label>
+              </div>
+            )}
+          </>
+        )}
+
         <div className="ann-modal-actions">
           {onSoftDelete && (
             <button className="ann-btn ann-btn-del" onClick={onSoftDelete}>削除</button>
@@ -1265,7 +1564,7 @@ function NameModal({ current, onSave, onClose }) {
           placeholder="例）かしむら"
           autoFocus
           onChange={(e) => setName(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && onSave(name)}
+          onKeyDown={(e) => e.key === "Enter" && !e.nativeEvent.isComposing && onSave(name)}
         />
         <div className="ann-modal-actions">
           <div className="ann-spacer" />
@@ -1278,8 +1577,26 @@ function NameModal({ current, onSave, onClose }) {
 
 const SOON_DAYS = 14; // 期限の何日前から表示するか
 
+/* 今年の実施率: 今日までに発生した回数と、doneLogのうち今年の件数 */
+function recurRateThisYear(t) {
+  if (t.freq === "none") return null;
+  const today = rMid(new Date());
+  const year = today.getFullYear();
+  let expected = 0;
+  let cur = occOnOrAfter(t, new Date(year, 0, 1));
+  let guard = 0;
+  while (cur && cur <= today && cur.getFullYear() === year && guard < 420) {
+    expected++;
+    cur = occOnOrAfter(t, rAddDays(cur, 1));
+    guard++;
+  }
+  const done = (t.doneLog || []).filter((s) => s.startsWith(String(year))).length;
+  return { expected, done: Math.min(done, expected) || done };
+}
+
 function RecurCard({ row, isChild, onEdit, onComplete, onUndo }) {
   const { t, due, days } = row;
+  const rate = recurRateThisYear(t);
   const WD = ["日", "月", "火", "水", "木", "金", "土"];
   const overdue = due && days < 0;
   const soon = due && days >= 0 && days <= SOON_DAYS;
@@ -1312,6 +1629,11 @@ function RecurCard({ row, isChild, onEdit, onComplete, onUndo }) {
         {t.memo && <div className="ann-recur-memo">{t.memo}</div>}
         {t.lastDone && (
           <div className="ann-recur-last">前回完了 {t.lastDone.slice(5).replace("-", "/")}</div>
+        )}
+        {rate && rate.expected > 0 && (
+          <div className={"ann-recur-rate" + (rate.done < rate.expected ? " is-short" : "")}>
+            今年 {rate.done}/{rate.expected}回 完了
+          </div>
         )}
       </button>
       <div className="ann-recur-actions">
@@ -1380,6 +1702,22 @@ function RecurView({ tasks, onAdd, onEdit, onComplete, onUndo }) {
         </div>
         <button className="ann-add" onClick={onAdd}>＋ 追加</button>
       </div>
+
+      {tasks.filter((t) => t.freq !== "none").length > 0 && (() => {
+        let exp = 0, done = 0;
+        for (const t of tasks) {
+          const r = recurRateThisYear(t);
+          if (r) { exp += r.expected; done += r.done; }
+        }
+        if (exp === 0) return null;
+        return (
+          <div className="ann-recur-year-sum">
+            📊 今年の実施状況: <b>{done}/{exp}回</b> 完了
+            {done < exp && <span className="is-short">（{exp - done}回 未実施）</span>}
+            <span className="ann-recur-sum-note">※「✓完了」を押した記録から集計（今日以降の分）</span>
+          </div>
+        );
+      })()}
 
       {groups.length === 0 && (
         <div className="ann-recur-empty">
@@ -1602,19 +1940,24 @@ function HomeView({ data, onComplete, onGoMonth, onGoRecur }) {
   const tasks = (data.recurring || []).filter((t) => t.freq !== "none");
   const WD = ["日", "月", "火", "水", "木", "金", "土"];
 
-  const rinfo = tasks
-    .map((t) => {
-      const due = nextDue(t, today);
-      const days = due ? Math.round((rMid(due) - today) / 86400000) : null;
-      return { kind: "recur", t, due, days };
-    })
-    .filter((r) => r.due);
+  // 定期タスクは行としては出さず、期限切れの件数だけ小さく知らせる
+  const recurOverdueCount = tasks.filter((t) => {
+    const due = nextDue(t, today);
+    return due && Math.round((rMid(due) - today) / 86400000) < 0;
+  }).length;
 
   const evItems = [];
-  if (yd) {
+  const pendingItems = []; // 恒例なのに日付未定
+  const scanYear = (y, ydata) => {
+    if (!ydata) return;
     for (let m = 1; m <= 12; m++) {
-      for (const e of yd.months[m]) {
-        if (e.deletedAt || !e.date) continue;
+      for (const e of ydata.months[m]) {
+        if (e.deletedAt) continue;
+        if (e.pendingDate && !e.date) {
+          pendingItems.push({ e, m, year: y });
+          continue;
+        }
+        if (!e.date || y !== year) continue;
         const mm = String(e.date).match(/(\d{1,2})\D+(\d{1,2})/);
         if (!mm) continue;
         const due = rMid(new Date(year, Number(mm[1]) - 1, Number(mm[2])));
@@ -1622,15 +1965,14 @@ function HomeView({ data, onComplete, onGoMonth, onGoRecur }) {
         evItems.push({ kind: "event", e, m: Number(mm[1]), due, days });
       }
     }
-  }
+  };
+  scanYear(year, yd);
+  scanYear(year + 1, data.years[year + 1]); // 来年分の「日付未定」も拾う
 
-  const overdue = rinfo.filter((r) => r.days < 0).sort((a, b) => a.due - b.due);
-  const todayItems = [...rinfo.filter((r) => r.days === 0), ...evItems.filter((r) => r.days === 0)]
+  const todayItems = evItems.filter((r) => r.days === 0).sort((a, b) => a.due - b.due);
+  const weekItems = evItems
+    .filter((r) => r.days > 0 && r.days <= 7)
     .sort((a, b) => a.due - b.due);
-  const weekItems = [
-    ...rinfo.filter((r) => r.days > 0 && r.days <= 7),
-    ...evItems.filter((r) => r.days > 0 && r.days <= 7),
-  ].sort((a, b) => a.due - b.due);
 
   const renderRow = (it, key) => {
     const lv = levelOf(it.kind === "recur" ? it.t.importance : it.e.importance);
@@ -1661,20 +2003,37 @@ function HomeView({ data, onComplete, onGoMonth, onGoRecur }) {
     );
   };
 
-  const empty = !overdue.length && !todayItems.length && !weekItems.length;
+  const empty = !todayItems.length && !weekItems.length && !pendingItems.length;
 
   return (
     <div className="ann-home">
       <div className="ann-home-greet">
         {today.getMonth() + 1}月{today.getDate()}日（{WD[today.getDay()]})・直近の予定
       </div>
-      {empty && (
-        <div className="ann-recur-empty">直近1週間にやることはありません。お疲れさまです。</div>
+      {recurOverdueCount > 0 && (
+        <button className="ann-home-recur-alert" onClick={onGoRecur}>
+          🔁 期限切れの定期タスクが <b>{recurOverdueCount}件</b> → 定期タスクへ
+        </button>
       )}
-      {overdue.length > 0 && (
-        <section className="ann-home-sec is-over">
-          <h3 className="ann-home-h">⚠ 期限切れ（{overdue.length})</h3>
-          {overdue.map((it, i) => renderRow(it, "o" + i))}
+      {empty && (
+        <div className="ann-recur-empty">直近1週間の予定はありません。お疲れさまです。</div>
+      )}
+      {pendingItems.length > 0 && (
+        <section className="ann-home-sec is-pending">
+          <h3 className="ann-home-h">📌 日付が未定の恒例行事（{pendingItems.length}）</h3>
+          {pendingItems.map((it, i) => (
+            <div className="ann-home-row" key={"p" + i}>
+              <span className="ann-home-ico event">📌</span>
+              <button className="ann-home-main" onClick={() => onGoMonth(it.m)}>
+                <span className="ann-home-rowtop">
+                  <span className="ann-home-name">{it.e.text || "（無題)"}</span>
+                </span>
+                <span className="ann-home-date">
+                  {it.year}年{it.m}月・日付を決めてください
+                </span>
+              </button>
+            </div>
+          ))}
         </section>
       )}
       {todayItems.length > 0 && (
