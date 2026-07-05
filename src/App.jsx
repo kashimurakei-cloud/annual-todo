@@ -375,7 +375,7 @@ export default function App() {
   const doPrint = (mode, startM) => {
     setPrintMode({ mode, startM: startM || 1 });
     setShowPrint(false);
-    setTimeout(() => window.print(), 250);
+    setTimeout(() => window.print(), 80);
   };
   const [myName, setMyName] = useState(() => localStorage.getItem(NAME_KEY) || "");
   const [showName, setShowName] = useState(false);
@@ -2238,6 +2238,20 @@ function PrintYearCal({ yd, year, cal, recur }) {
                     );
                   })}
                 </div>
+                {(() => {
+                  const evs = yd.months[m].filter((e) => !e.deletedAt && e.text);
+                  if (evs.length === 0) return null;
+                  return (
+                    <div className="ann-ycal-evs">
+                      {evs.slice(0, 4).map((e) => (
+                        <span className="ann-ycal-ev" key={e.id}>
+                          {e.date ? e.date.replace(/^0?(\d+)\D0?(\d+).*/, "$2") : "?"}日 {e.text}
+                        </span>
+                      ))}
+                      {evs.length > 4 && <span className="ann-ycal-ev">…他{evs.length - 4}件</span>}
+                    </div>
+                  );
+                })()}
               </div>
             );
           })}
@@ -2271,10 +2285,14 @@ function PrintCal3({ yd, year, cal, startM }) {
           for (let d = 1; d <= dim; d++) cells.push(d);
           while (cells.length % 7 !== 0) cells.push(null);
           const evsrc = (y === year ? yd.months[m] : []) || [];
+          const weeks = cells.length / 7;
           return (
             <div className="ann-c3-month" key={m + "-" + y}>
               <div className="ann-c3-mh">{y !== year ? `${y}年 ` : ""}{m}月</div>
-              <div className="ann-c3-grid">
+              <div
+                className="ann-c3-grid"
+                style={{ gridTemplateRows: `auto repeat(${weeks}, 1fr)` }}
+              >
                 {WD1.map((w, i) => (
                   <div key={"h" + i} className={"ann-c3-wd" + (i === 0 ? " sun" : i === 6 ? " sat" : "")}>{w}</div>
                 ))}
