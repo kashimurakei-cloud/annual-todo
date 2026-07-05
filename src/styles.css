@@ -535,52 +535,74 @@ body{margin:0;background:var(--bg);}
   .ann-plist-date{flex:0 0 17mm;font-weight:700;}
   .ann-plist-text{flex:1;}
 
-  /* --- 年間カレンダー(1枚・予定名入り) --- */
-  .ann-ycal{page-break-after:auto;}
-  .ann-ycal-legend{display:flex;gap:3mm;font-size:9px;margin:1.5mm 0 2.5mm;}
-  .ann-ycal-legend .lg{padding:0.6mm 2mm;border:0.6px solid #666;border-radius:2mm;font-weight:700;}
+  /* --- 年間カレンダー(1枚・全予定入り) --- */
+  .ann-ycal{page-break-after:auto;height:277mm;display:flex;flex-direction:column;overflow:hidden;}
+  .ann-ycal-head{display:flex;align-items:baseline;gap:6mm;border-bottom:2px solid #000;
+    padding-bottom:1.2mm;margin-bottom:2mm;flex:0 0 auto;}
+  .ann-ycal-title{font-size:15px;font-weight:900;letter-spacing:0.5px;}
+  .ann-ycal-legend{display:flex;gap:2mm;font-size:7.5px;margin-left:auto;align-items:center;}
+  .ann-ycal-legend .lg{padding:0.5mm 1.8mm;border:0.5px solid #666;border-radius:2mm;font-weight:700;}
   .ann-ycal-legend .lg-off{background:#c9c9c9;}
   .ann-ycal-legend .lg-nenkyu{background:#8fd6c4;}
   .ann-ycal-legend .lg-daishin{background:#f5b877;}
   .ann-ycal-legend .lg-kentou{background:#f2df7a;}
-  .ann-ycal-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:2.5mm 5mm;}
-  .ann-ycal-month{break-inside:avoid;}
-  .ann-ycal-mh{font-size:12px;font-weight:800;margin-bottom:0.8mm;border-bottom:1px solid #000;}
-  .ann-ycal-days{display:grid;grid-template-columns:repeat(7,1fr);gap:0.4mm;}
-  .ann-ycal-wd{font-size:7px;text-align:center;color:#555;font-weight:700;}
-  .ann-ycal-wd.sun{color:#C7402F;}
-  .ann-ycal-wd.sat{color:#2A6FB0;}
-  .ann-ycal-cell{position:relative;font-size:9px;font-weight:600;text-align:center;height:6.2mm;
-    line-height:6.2mm;border-radius:0.8mm;}
-  .ann-ycal-cell.c-off{background:#c9c9c9;}
-  .ann-ycal-cell.c-nenkyu{background:#8fd6c4;}
-  .ann-ycal-cell.c-daishin{background:#f5b877;}
-  .ann-ycal-cell.c-kentou{background:#f2df7a;}
-  .ann-ycal-cell .ev-dot{position:absolute;left:50%;bottom:0.3mm;transform:translateX(-50%);
-    width:1.4mm;height:1.4mm;border-radius:50%;background:#C7402F;display:block;}
-  .ann-ycal-evs{margin-top:0.8mm;display:flex;flex-direction:column;gap:0.2mm;}
-  .ann-ycal-ev{font-size:7.5px;line-height:1.3;white-space:nowrap;overflow:hidden;
-    text-overflow:ellipsis;color:#222;}
+  .ann-ycal-legend .lg-dot{border:none;}
+  .ann-ycal-grid{flex:1 1 auto;min-height:0;display:grid;grid-template-columns:1fr 1fr;
+    grid-auto-rows:1fr;gap:1.6mm 5mm;}
+  .ann-ycal-month{display:flex;gap:2.5mm;overflow:hidden;min-height:0;
+    border-bottom:0.4px solid #ddd;padding-bottom:1mm;}
+  .ann-ycal-cal{flex:0 0 40mm;}
+  .ann-ycal-mh{font-size:10px;font-weight:900;margin-bottom:0.4mm;}
+  .ann-ycal-table{width:40mm;border-collapse:collapse;table-layout:fixed;}
+  .ann-ycal-table th{font-size:5.5px;font-weight:700;color:#555;text-align:center;padding:0;}
+  .ann-ycal-table th.sun{color:#C7402F;}
+  .ann-ycal-table th.sat{color:#2A6FB0;}
+  .ann-ycal-table td{position:relative;font-size:7px;font-weight:700;text-align:center;
+    height:4.6mm;padding:0;border-radius:0.6mm;}
+  .ann-ycal-table td.sun{color:#C7402F;}
+  .ann-ycal-table td.sat{color:#2A6FB0;}
+  .ann-ycal-table td.c-off{background:#c9c9c9;color:#333;}
+  .ann-ycal-table td.c-nenkyu{background:#8fd6c4;}
+  .ann-ycal-table td.c-daishin{background:#f5b877;}
+  .ann-ycal-table td.c-kentou{background:#f2df7a;}
+  .ann-ycal-table td .ev-dot{position:absolute;left:50%;bottom:0.1mm;transform:translateX(-50%);
+    width:1mm;height:1mm;border-radius:50%;background:#C7402F;display:block;}
+  .ann-ycal-evs{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;
+    gap:0.2mm;overflow:hidden;padding-top:3mm;}
+  .ann-ycal-ev{font-size:7.2px;line-height:1.32;white-space:nowrap;overflow:hidden;
+    text-overflow:ellipsis;color:#111;}
+  .ann-ycal-ev b{font-weight:800;}
+  .ann-ycal-ev.none{color:#aaa;}
 
-  /* --- 3ヶ月カレンダー(1枚・高さ固定ではみ出し防止) --- */
-  .ann-c3{page-break-after:auto;display:flex;flex-direction:column;height:275mm;}
-  .ann-c3 .ann-print-head{flex:0 0 auto;}
-  .ann-c3-month{flex:1 1 0;display:flex;flex-direction:column;min-height:0;
-    margin-bottom:2mm;break-inside:avoid;}
-  .ann-c3-mh{flex:0 0 auto;font-size:12px;font-weight:800;margin-bottom:0.8mm;}
-  .ann-c3-grid{flex:1 1 auto;min-height:0;display:grid;grid-template-columns:repeat(7,1fr);gap:0.4mm;}
-  .ann-c3-wd{font-size:7.5px;text-align:center;font-weight:700;color:#555;padding:0.3mm 0;}
-  .ann-c3-wd.sun{color:#C7402F;}
-  .ann-c3-wd.sat{color:#2A6FB0;}
-  .ann-c3-cell{border:0.5px solid #aaa;border-radius:0.8mm;min-height:0;
-    padding:0.5mm;font-size:7px;overflow:hidden;}
-  .ann-c3-cell.empty{border-color:#e5e5e5;}
-  .ann-c3-cell.c-off{background:#c9c9c9;}
-  .ann-c3-cell.c-nenkyu{background:#8fd6c4;}
-  .ann-c3-cell.c-daishin{background:#f5b877;}
-  .ann-c3-cell.c-kentou{background:#f2df7a;}
-  .ann-c3-d{font-weight:800;font-size:8.5px;display:block;}
-  .ann-c3-ev{display:block;font-size:7px;line-height:1.3;white-space:nowrap;
+  /* --- 3ヶ月カレンダー(1枚・壁貼り用デザイン) --- */
+  .ann-c3{page-break-after:auto;height:277mm;display:flex;flex-direction:column;overflow:hidden;}
+  .ann-c3-head{display:flex;align-items:baseline;gap:6mm;border-bottom:2px solid #000;
+    padding-bottom:1.2mm;margin-bottom:2.5mm;flex:0 0 auto;}
+  .ann-c3-title{font-size:15px;font-weight:900;letter-spacing:0.5px;}
+  .ann-c3-month{flex:1 1 0;min-height:0;margin-bottom:2.5mm;
+    border:1.2px solid #222;border-radius:2mm;overflow:hidden;
+    display:flex;flex-direction:column;}
+  .ann-c3-band{flex:0 0 auto;background:#1f2933;color:#fff;display:flex;
+    align-items:baseline;gap:1mm;padding:1mm 3mm;}
+  .ann-c3-m{font-size:14px;font-weight:900;}
+  .ann-c3-gatsu{font-size:9px;font-weight:700;}
+  .ann-c3-y{font-size:8px;margin-left:2mm;opacity:0.85;}
+  .ann-c3-table{flex:1 1 auto;width:100%;border-collapse:collapse;table-layout:fixed;}
+  .ann-c3-table th{background:#eef1f3;font-size:7.5px;font-weight:800;color:#444;
+    text-align:center;padding:0.6mm 0;border:0.4px solid #c8cdd2;}
+  .ann-c3-table th.sun{color:#C7402F;}
+  .ann-c3-table th.sat{color:#2A6FB0;}
+  .ann-c3-table td{border:0.4px solid #c8cdd2;vertical-align:top;
+    padding:0.5mm 0.8mm;font-size:7px;overflow:hidden;}
+  .ann-c3-table td.empty{background:#fafafa;}
+  .ann-c3-table td.c-off{background:#c9c9c9;}
+  .ann-c3-table td.c-nenkyu{background:#8fd6c4;}
+  .ann-c3-table td.c-daishin{background:#f5b877;}
+  .ann-c3-table td.c-kentou{background:#f2df7a;}
+  .ann-c3-d{font-weight:800;font-size:8.5px;display:block;line-height:1.2;}
+  .ann-c3-table td.sun .ann-c3-d{color:#C7402F;}
+  .ann-c3-table td.sat .ann-c3-d{color:#2A6FB0;}
+  .ann-c3-ev{display:block;font-size:6.8px;line-height:1.3;white-space:nowrap;
     overflow:hidden;text-overflow:ellipsis;}
 
   /* --- 定期タスク一覧 --- */

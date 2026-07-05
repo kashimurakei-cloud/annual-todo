@@ -2184,74 +2184,79 @@ function PrintList({ yd, year, cal }) {
   );
 }
 
-/* 🗓 年間カレンダー(12ヶ月を1枚) */
-function PrintYearCal({ yd, year, cal, recur }) {
+/* 🗓 年間カレンダー(12ヶ月を1枚): ミニカレンダー+その月の全予定 */
+function PrintYearCal({ yd, year, cal }) {
   const WD1 = ["日", "月", "火", "水", "木", "金", "土"];
-  const mini = (m) => {
-    const dim = new Date(year, m, 0).getDate();
-    const first = new Date(year, m - 1, 1).getDay();
-    const cells = [];
-    for (let i = 0; i < first; i++) cells.push(null);
-    for (let d = 1; d <= dim; d++) cells.push(d);
-    return { cells, dim };
-  };
   return (
     <div className="ann-print">
       <div className="ann-print-page ann-ycal">
-        <div className="ann-print-head">
-          <span className="ann-print-month">年間カレンダー</span>
-          <span className="ann-print-year">{year}年</span>
-        </div>
-        <div className="ann-ycal-legend">
-          <span className="lg lg-off">休診・祝日</span>
-          <span className="lg lg-nenkyu">計画年休</span>
-          <span className="lg lg-daishin">代診</span>
-          <span className="lg lg-kentou">検討中</span>
-          <span className="lg">●=予定あり</span>
+        <div className="ann-ycal-head">
+          <span className="ann-ycal-title">{year}年 年間カレンダー</span>
+          <span className="ann-ycal-legend">
+            <span className="lg lg-off">休診・祝日</span>
+            <span className="lg lg-nenkyu">計画年休</span>
+            <span className="lg lg-daishin">代診</span>
+            <span className="lg lg-kentou">検討中</span>
+            <span className="lg lg-dot">●予定あり</span>
+          </span>
         </div>
         <div className="ann-ycal-grid">
           {MONTHS.map((mo) => {
             const m = mo.n;
-            const { cells } = mini(m);
+            const dim = new Date(year, m, 0).getDate();
+            const first = new Date(year, m - 1, 1).getDay();
+            const cells = [];
+            for (let i = 0; i < first; i++) cells.push(null);
+            for (let d = 1; d <= dim; d++) cells.push(d);
+            while (cells.length % 7 !== 0) cells.push(null);
+            const weeks = [];
+            for (let w = 0; w < cells.length / 7; w++) weeks.push(cells.slice(w * 7, w * 7 + 7));
+            const evs = yd.months[m].filter((e) => !e.deletedAt && e.text);
             return (
               <div className="ann-ycal-month" key={m}>
-                <div className="ann-ycal-mh">{m}月</div>
-                <div className="ann-ycal-days">
-                  {WD1.map((w, i) => (
-                    <span key={"h" + i} className={"ann-ycal-wd" + (i === 0 ? " sun" : i === 6 ? " sat" : "")}>{w}</span>
-                  ))}
-                  {cells.map((d, i) => {
-                    if (d == null) return <span key={i} className="ann-ycal-cell" />;
-                    const s = calState(cal, year, m, d);
-                    const hasEv = printEvForDay(yd.months[m], m, d).length > 0;
-                    const cls =
-                      "ann-ycal-cell d" +
-                      (s === "off" || s === "holiday" ? " c-off" :
-                       s === "nenkyu" ? " c-nenkyu" :
-                       s === "daishin" ? " c-daishin" :
-                       s === "kentou" ? " c-kentou" : "");
-                    return (
-                      <span key={i} className={cls}>
-                        {d}
-                        {hasEv && <i className="ev-dot" />}
-                      </span>
-                    );
-                  })}
-                </div>
-                {(() => {
-                  const evs = yd.months[m].filter((e) => !e.deletedAt && e.text);
-                  if (evs.length === 0) return null;
-                  return (
-                    <div className="ann-ycal-evs">
-                      {evs.slice(0, 4).map((e) => (
-                        <span className="ann-ycal-ev" key={e.id}>
-                          {e.date ? e.date.replace(/^0?(\d+)\D0?(\d+).*/, "$2") : "?"}日 {e.text}
-                        </span>
+                <div className="ann-ycal-cal">
+                  <div className="ann-ycal-mh">{m}月</div>
+                  <table className="ann-ycal-table">
+                    <thead>
+                      <tr>
+                        {WD1.map((w, i) => (
+                          <th key={i} className={i === 0 ? "sun" : i === 6 ? "sat" : ""}>{w}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {weeks.map((row, wi) => (
+                        <tr key={wi}>
+                          {row.map((d, di) => {
+                            if (d == null) return <td key={di} />;
+                            const s = calState(cal, year, m, d);
+                            const hasEv = printEvForDay(yd.months[m], m, d).length > 0;
+                            const cls =
+                              (s === "off" || s === "holiday" ? "c-off" :
+                               s === "nenkyu" ? "c-nenkyu" :
+                               s === "daishin" ? "c-daishin" :
+                               s === "kentou" ? "c-kentou" : "") +
+                              (di === 0 ? " sun" : di === 6 ? " sat" : "");
+                            return (
+                              <td key={di} className={cls}>
+                                {d}
+                                {hasEv && <i className="ev-dot" />}
+                              </td>
+                            );
+                          })}
+                        </tr>
                       ))}
-                      {evs.length > 4 && <span className="ann-ycal-ev">…他{evs.length - 4}件</span>}
-                    </div>
-                  );
-                })()}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="ann-ycal-evs">
+                  {evs.length === 0 && <span className="ann-ycal-ev none">予定なし</span>}
+                  {evs.map((e) => (
+                    <span className="ann-ycal-ev" key={e.id}>
+                      <b>{e.date || "未定"}</b> {e.importance && `[${e.importance}]`}{e.text}
+                    </span>
+                  ))}
+                </div>
               </div>
             );
           })}
@@ -2271,11 +2276,16 @@ function PrintCal3({ yd, year, cal, startM }) {
   return (
     <div className="ann-print">
       <div className="ann-print-page ann-c3">
-        <div className="ann-print-head">
-          <span className="ann-print-month">
-            {months[0].m}月〜{months[2].m}月
+        <div className="ann-c3-head">
+          <span className="ann-c3-title">
+            {year}年 {months[0].m}月〜{months[2].m}月{months[2].y !== year ? `（〜${months[2].y}年）` : ""}
           </span>
-          <span className="ann-print-year">{year}年{months[2].y !== year ? `〜${months[2].y}年` : ""}</span>
+          <span className="ann-ycal-legend">
+            <span className="lg lg-off">休診・祝日</span>
+            <span className="lg lg-nenkyu">計画年休</span>
+            <span className="lg lg-daishin">代診</span>
+            <span className="lg lg-kentou">検討中</span>
+          </span>
         </div>
         {months.map(({ m, y }) => {
           const dim = new Date(y, m, 0).getDate();
@@ -2284,39 +2294,53 @@ function PrintCal3({ yd, year, cal, startM }) {
           for (let i = 0; i < first; i++) cells.push(null);
           for (let d = 1; d <= dim; d++) cells.push(d);
           while (cells.length % 7 !== 0) cells.push(null);
+          const weeks = [];
+          for (let w = 0; w < cells.length / 7; w++) weeks.push(cells.slice(w * 7, w * 7 + 7));
           const evsrc = (y === year ? yd.months[m] : []) || [];
-          const weeks = cells.length / 7;
+          // 1枚に3ヶ月を収めるため、週数からマスの高さを逆算
+          const cellH = ((72 - 4) / weeks.length).toFixed(1);
           return (
             <div className="ann-c3-month" key={m + "-" + y}>
-              <div className="ann-c3-mh">{y !== year ? `${y}年 ` : ""}{m}月</div>
-              <div
-                className="ann-c3-grid"
-                style={{ gridTemplateRows: `auto repeat(${weeks}, 1fr)` }}
-              >
-                {WD1.map((w, i) => (
-                  <div key={"h" + i} className={"ann-c3-wd" + (i === 0 ? " sun" : i === 6 ? " sat" : "")}>{w}</div>
-                ))}
-                {cells.map((d, i) => {
-                  if (d == null) return <div key={i} className="ann-c3-cell empty" />;
-                  const s = y === year ? calState(cal, y, m, d) : defaultDayState(y, m, d);
-                  const evs = printEvForDay(evsrc, m, d);
-                  const cls =
-                    "ann-c3-cell" +
-                    (s === "off" || s === "holiday" ? " c-off" :
-                     s === "nenkyu" ? " c-nenkyu" :
-                     s === "daishin" ? " c-daishin" :
-                     s === "kentou" ? " c-kentou" : "");
-                  return (
-                    <div key={i} className={cls}>
-                      <span className="ann-c3-d">{d}</span>
-                      {evs.slice(0, 2).map((e) => (
-                        <span className="ann-c3-ev" key={e.id}>{e.text}</span>
-                      ))}
-                      {evs.length > 2 && <span className="ann-c3-ev">…他{evs.length - 2}</span>}
-                    </div>
-                  );
-                })}
+              <div className="ann-c3-band">
+                <span className="ann-c3-m">{m}</span>
+                <span className="ann-c3-gatsu">月</span>
+                {y !== year && <span className="ann-c3-y">{y}年</span>}
               </div>
+              <table className="ann-c3-table">
+                <thead>
+                  <tr>
+                    {WD1.map((w, i) => (
+                      <th key={i} className={i === 0 ? "sun" : i === 6 ? "sat" : ""}>{w}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {weeks.map((row, wi) => (
+                    <tr key={wi} style={{ height: `${cellH}mm` }}>
+                      {row.map((d, di) => {
+                        if (d == null) return <td key={di} className="empty" />;
+                        const s = y === year ? calState(cal, y, m, d) : defaultDayState(y, m, d);
+                        const evs = printEvForDay(evsrc, m, d);
+                        const cls =
+                          (s === "off" || s === "holiday" ? "c-off" :
+                           s === "nenkyu" ? "c-nenkyu" :
+                           s === "daishin" ? "c-daishin" :
+                           s === "kentou" ? "c-kentou" : "") +
+                          (di === 0 ? " sun" : di === 6 ? " sat" : "");
+                        return (
+                          <td key={di} className={cls}>
+                            <span className="ann-c3-d">{d}</span>
+                            {evs.slice(0, 3).map((e) => (
+                              <span className="ann-c3-ev" key={e.id}>{e.text}</span>
+                            ))}
+                            {evs.length > 3 && <span className="ann-c3-ev">他{evs.length - 3}件</span>}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           );
         })}
