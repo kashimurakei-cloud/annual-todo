@@ -170,6 +170,8 @@ dom.window.URL.revokeObjectURL = () => {};
 globalThis.URL.createObjectURL = dom.window.URL.createObjectURL;
 globalThis.URL.revokeObjectURL = dom.window.URL.revokeObjectURL;
 dom.window.HTMLAnchorElement.prototype.click = function () {};
+globalThis.__printed = 0;
+dom.window.print = () => { globalThis.__printed++; };
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 const click = (el) =>
@@ -294,6 +296,45 @@ try {
   html = rootEl.innerHTML;
   console.log("=== EDITOR ===");
   console.log("Annual toggle in editor:", html.includes("毎年恒例の行事"));
+  // エディタを閉じる
+  click([...rootEl.querySelectorAll(".ann-btn-ghost")].find((b) => b.textContent === "キャンセル"));
+  await wait(200);
+
+  /* ---------- 印刷メニュー ---------- */
+  console.log("=== PRINT MENU ===");
+  click([...rootEl.querySelectorAll("button")].find((b) => b.textContent.includes("🖨")));
+  await wait(200);
+  html = rootEl.innerHTML;
+  console.log("Print menu 5 items:",
+    ["年間カレンダー", "3ヶ月カレンダー", "予定リスト", "定期タスク一覧", "月別ページ"].every((t) => html.includes(t)));
+
+  // 年間カレンダー
+  click([...rootEl.querySelectorAll(".ann-print-item")].find((b) => b.textContent.includes("年間カレンダー")));
+  await wait(500);
+  console.log("Yearcal rendered:", !!rootEl.querySelector(".ann-ycal") && rootEl.querySelectorAll(".ann-ycal-month").length === 12);
+  console.log("Yearcal print called:", globalThis.__printed >= 1);
+
+  // 3ヶ月カレンダー
+  click([...rootEl.querySelectorAll("button")].find((b) => b.textContent.includes("🖨")));
+  await wait(200);
+  click([...rootEl.querySelectorAll(".ann-print-3m-row .ann-btn-save")][0]);
+  await wait(500);
+  console.log("Cal3 rendered (3 months):", rootEl.querySelectorAll(".ann-c3-month").length === 3);
+
+  // 予定リスト
+  click([...rootEl.querySelectorAll("button")].find((b) => b.textContent.includes("🖨")));
+  await wait(200);
+  click([...rootEl.querySelectorAll(".ann-print-item")].find((b) => b.textContent.includes("予定リスト")));
+  await wait(500);
+  console.log("PrintList has event:", (rootEl.querySelector(".ann-plist")?.innerHTML || "").includes("忘年会"));
+
+  // 定期タスク一覧
+  click([...rootEl.querySelectorAll("button")].find((b) => b.textContent.includes("🖨")));
+  await wait(200);
+  click([...rootEl.querySelectorAll(".ann-print-item")].find((b) => b.textContent.includes("定期タスク一覧")));
+  await wait(500);
+  const prec = rootEl.querySelector(".ann-prec-table")?.innerHTML || "";
+  console.log("PrintRecur table:", prec.includes("レセプト送信") && prec.includes("☐"));
 } catch (e) {
   console.error = origError;
   console.log("=== RENDER FAILED ===");

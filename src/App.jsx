@@ -138,9 +138,9 @@ function monthCounts(cal, year, m) {
   for (let d = 1; d <= dim; d++) {
     const s = calState(cal, year, m, d);
     const dow = new Date(year, m - 1, d).getDay();
-    if (s === "open" || s === "daishin") { open++; if (dow === 0) sunClinic++; }
+    // 「検討中」は決まるまで診療日としてカウントする
+    if (s === "open" || s === "daishin" || s === "kentou") { open++; if (dow === 0) sunClinic++; }
     else if (s === "nenkyu") nenkyu++;
-    else if (s === "kentou") { /* 未定 */ }
     else off++; // 休診・祝日
   }
   return { open, off, nenkyu, sunClinic, staff: open - sunClinic, staffOff: off + sunClinic };
@@ -369,6 +369,14 @@ export default function App() {
   const [synced, setSynced] = useState(false);
   const [query, setQuery] = useState("");
   const [showSearch, setShowSearch] = useState(false);
+  const [showPrint, setShowPrint] = useState(false);
+  const [printMode, setPrintMode] = useState({ mode: "monthly", startM: 1 });
+
+  const doPrint = (mode, startM) => {
+    setPrintMode({ mode, startM: startM || 1 });
+    setShowPrint(false);
+    setTimeout(() => window.print(), 250);
+  };
   const [myName, setMyName] = useState(() => localStorage.getItem(NAME_KEY) || "");
   const [showName, setShowName] = useState(false);
   const [calAdded, setCalAdded] = useState(() => {
@@ -850,7 +858,7 @@ export default function App() {
             <button className="ann-printbtn" onClick={exportIcs} title={`${activeYear}年をカレンダー形式で書き出し`}>
               📤
             </button>
-            <button className="ann-printbtn" onClick={() => window.print()} title={`${activeYear}年を印刷`}>
+            <button className="ann-printbtn" onClick={() => setShowPrint(true)} title="印刷メニュー">
               🖨 印刷
             </button>
           </div>
@@ -1091,6 +1099,14 @@ export default function App() {
         />
       )}
 
+      {showPrint && (
+        <PrintMenu
+          year={activeYear}
+          onPrint={doPrint}
+          onClose={() => setShowPrint(false)}
+        />
+      )}
+
       {showName && (
         <NameModal current={myName} onSave={saveName} onClose={() => setShowName(false)} />
       )}
@@ -1099,7 +1115,21 @@ export default function App() {
         このリンクを知っている人は誰でも閲覧・編集できます。削除した予定は取り消し線で残り、2週間後に自動で消えます。
       </footer>
 
-      <PrintSheet yd={yd} year={activeYear} tasks={data.recurring || []} cal={data.cal || {}} />
+      {printMode.mode === "monthly" && (
+        <PrintSheet yd={yd} year={activeYear} tasks={data.recurring || []} cal={data.cal || {}} />
+      )}
+      {printMode.mode === "list" && (
+        <PrintList yd={yd} year={activeYear} cal={data.cal || {}} />
+      )}
+      {printMode.mode === "yearcal" && (
+        <PrintYearCal yd={yd} year={activeYear} cal={data.cal || {}} recur={recurMap} />
+      )}
+      {printMode.mode === "cal3" && (
+        <PrintCal3 yd={yd} year={activeYear} cal={data.cal || {}} startM={printMode.startM} />
+      )}
+      {printMode.mode === "recur" && (
+        <PrintRecur tasks={data.recurring || []} year={activeYear} />
+      )}
     </div>
   );
 }
@@ -2048,6 +2078,291 @@ function HomeView({ data, onComplete, onGoMonth, onGoRecur }) {
           {weekItems.map((it, i) => renderRow(it, "w" + i))}
         </section>
       )}
+    </div>
+  );
+}
+
+/* 印刷メニュー */
+function PrintMenu({ year, onPrint, onClose }) {
+  const [startM, setStartM] = useState(new Date().getMonth() + 1);
+  const Item = ({ icon, title, desc, onClick }) => (
+    <button className="ann-print-item" onClick={onClick}>
+      <span className="ann-print-item-ico">{icon}</span>
+      <span className="ann-print-item-body">
+        <span className="ann-print-item-title">{title}</span>
+        <span className="ann-print-item-desc">{desc}</span>
+      </span>
+    </button>
+  );
+  return (
+    <div className="ann-modal-bg" onClick={onClose}>
+      <div className="ann-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="ann-modal-head"><span>🖨 印刷（{year}年）</span></div>
+        <Item icon="🗓" title="年間カレンダー" desc="12ヶ月をA4 1枚に。診療/休診/年休/代診を色分け"
+          onClick={() => onPrint("yearcal")} />
+        <div className="ann-print-item ann-print-item-3m">
+          <span className="ann-print-item-ico">🗓</span>
+          <span className="ann-print-item-body">
+            <span className="ann-print-item-title">3ヶ月カレンダー</span>
+            <span className="ann-print-item-desc">選んだ月から3ヶ月をA4 1枚に。予定も日枠に印字</span>
+            <span className="ann-print-3m-row">
+              <select className="ann-input ann-print-3m-sel" value={startM}
+                onChange={(e) => setStartM(Number(e.target.value))}>
+                {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
+                  <option key={m} value={m}>{m}月から</option>
+                ))}
+              </select>
+              <button className="ann-btn ann-btn-save" onClick={() => onPrint("cal3", startM)}>印刷</button>
+            </span>
+          </span>
+        </div>
+        <Item icon="📋" title="予定リスト" desc="1年分の予定を一覧で（1〜2枚）"
+          onClick={() => onPrint("list")} />
+        <Item icon="🔁" title="定期タスク一覧" desc="タスク×月のチェック表。壁貼り用"
+          onClick={() => onPrint("recur")} />
+        <Item icon="📄" title="月別ページ（詳細）" desc="1ヶ月1枚×12枚。日ごとの予定＋定期"
+          onClick={() => onPrint("monthly")} />
+        <div className="ann-modal-actions">
+          <div className="ann-spacer" />
+          <button className="ann-btn ann-btn-ghost" onClick={onClose}>閉じる</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* 日付にあたる予定を取り出す(印刷共通) */
+function printEvForDay(events, m, d) {
+  return (events || []).filter((e) => {
+    if (e.deletedAt) return false;
+    const toks = String(e.date || "").match(/(\d{1,2})\D+(\d{1,2})/g) || [];
+    return toks.some((tok) => {
+      const mm = tok.match(/(\d{1,2})\D+(\d{1,2})/);
+      return Number(mm[1]) === m && Number(mm[2]) === d;
+    });
+  });
+}
+
+/* 📋 予定リスト印刷 */
+function PrintList({ yd, year, cal }) {
+  const WD = ["日", "月", "火", "水", "木", "金", "土"];
+  return (
+    <div className="ann-print">
+      <div className="ann-print-page ann-plist">
+        <div className="ann-print-head">
+          <span className="ann-print-month">予定一覧</span>
+          <span className="ann-print-year">{year}年</span>
+        </div>
+        <div className="ann-plist-cols">
+          {MONTHS.map((mo) => {
+            const list = yd.months[mo.n].filter((e) => !e.deletedAt);
+            return (
+              <div className="ann-plist-month" key={mo.n}>
+                <div className="ann-plist-mh">{mo.n}月 <span className="ann-plist-en">{mo.en}</span></div>
+                {list.length === 0 && <div className="ann-plist-empty">―</div>}
+                {list.map((e) => {
+                  const wi = e.date && !isRangeDate(e.date) ? weekdayInfo(e.date, year) : null;
+                  return (
+                    <div className="ann-plist-row" key={e.id}>
+                      <span className="ann-plist-date">
+                        {e.date || "未定"}{wi ? `(${wi.wd})` : ""}
+                      </span>
+                      <span className="ann-plist-text">
+                        {e.importance && `[${e.importance}] `}
+                        {e.clinic && "🏥"}
+                        {e.text}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* 🗓 年間カレンダー(12ヶ月を1枚) */
+function PrintYearCal({ yd, year, cal, recur }) {
+  const WD1 = ["日", "月", "火", "水", "木", "金", "土"];
+  const mini = (m) => {
+    const dim = new Date(year, m, 0).getDate();
+    const first = new Date(year, m - 1, 1).getDay();
+    const cells = [];
+    for (let i = 0; i < first; i++) cells.push(null);
+    for (let d = 1; d <= dim; d++) cells.push(d);
+    return { cells, dim };
+  };
+  return (
+    <div className="ann-print">
+      <div className="ann-print-page ann-ycal">
+        <div className="ann-print-head">
+          <span className="ann-print-month">年間カレンダー</span>
+          <span className="ann-print-year">{year}年</span>
+        </div>
+        <div className="ann-ycal-legend">
+          <span className="lg lg-off">休診・祝日</span>
+          <span className="lg lg-nenkyu">計画年休</span>
+          <span className="lg lg-daishin">代診</span>
+          <span className="lg lg-kentou">検討中</span>
+          <span className="lg">●=予定あり</span>
+        </div>
+        <div className="ann-ycal-grid">
+          {MONTHS.map((mo) => {
+            const m = mo.n;
+            const { cells } = mini(m);
+            return (
+              <div className="ann-ycal-month" key={m}>
+                <div className="ann-ycal-mh">{m}月</div>
+                <div className="ann-ycal-days">
+                  {WD1.map((w, i) => (
+                    <span key={"h" + i} className={"ann-ycal-wd" + (i === 0 ? " sun" : i === 6 ? " sat" : "")}>{w}</span>
+                  ))}
+                  {cells.map((d, i) => {
+                    if (d == null) return <span key={i} className="ann-ycal-cell" />;
+                    const s = calState(cal, year, m, d);
+                    const hasEv = printEvForDay(yd.months[m], m, d).length > 0;
+                    const cls =
+                      "ann-ycal-cell d" +
+                      (s === "off" || s === "holiday" ? " c-off" :
+                       s === "nenkyu" ? " c-nenkyu" :
+                       s === "daishin" ? " c-daishin" :
+                       s === "kentou" ? " c-kentou" : "");
+                    return (
+                      <span key={i} className={cls}>
+                        {d}
+                        {hasEv && <i className="ev-dot" />}
+                      </span>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* 🗓 3ヶ月カレンダー(1枚・予定入り) */
+function PrintCal3({ yd, year, cal, startM }) {
+  const WD1 = ["日", "月", "火", "水", "木", "金", "土"];
+  const months = [0, 1, 2].map((i) => {
+    const m0 = startM + i;
+    return { m: ((m0 - 1) % 12) + 1, y: year + Math.floor((m0 - 1) / 12) };
+  });
+  return (
+    <div className="ann-print">
+      <div className="ann-print-page ann-c3">
+        <div className="ann-print-head">
+          <span className="ann-print-month">
+            {months[0].m}月〜{months[2].m}月
+          </span>
+          <span className="ann-print-year">{year}年{months[2].y !== year ? `〜${months[2].y}年` : ""}</span>
+        </div>
+        {months.map(({ m, y }) => {
+          const dim = new Date(y, m, 0).getDate();
+          const first = new Date(y, m - 1, 1).getDay();
+          const cells = [];
+          for (let i = 0; i < first; i++) cells.push(null);
+          for (let d = 1; d <= dim; d++) cells.push(d);
+          while (cells.length % 7 !== 0) cells.push(null);
+          const evsrc = (y === year ? yd.months[m] : []) || [];
+          return (
+            <div className="ann-c3-month" key={m + "-" + y}>
+              <div className="ann-c3-mh">{y !== year ? `${y}年 ` : ""}{m}月</div>
+              <div className="ann-c3-grid">
+                {WD1.map((w, i) => (
+                  <div key={"h" + i} className={"ann-c3-wd" + (i === 0 ? " sun" : i === 6 ? " sat" : "")}>{w}</div>
+                ))}
+                {cells.map((d, i) => {
+                  if (d == null) return <div key={i} className="ann-c3-cell empty" />;
+                  const s = y === year ? calState(cal, y, m, d) : defaultDayState(y, m, d);
+                  const evs = printEvForDay(evsrc, m, d);
+                  const cls =
+                    "ann-c3-cell" +
+                    (s === "off" || s === "holiday" ? " c-off" :
+                     s === "nenkyu" ? " c-nenkyu" :
+                     s === "daishin" ? " c-daishin" :
+                     s === "kentou" ? " c-kentou" : "");
+                  return (
+                    <div key={i} className={cls}>
+                      <span className="ann-c3-d">{d}</span>
+                      {evs.slice(0, 2).map((e) => (
+                        <span className="ann-c3-ev" key={e.id}>{e.text}</span>
+                      ))}
+                      {evs.length > 2 && <span className="ann-c3-ev">…他{evs.length - 2}</span>}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* 🔁 定期タスク一覧(タスク×月チェック表) */
+function PrintRecur({ tasks, year }) {
+  const byId = Object.fromEntries(tasks.map((t) => [t.id, t]));
+  const tops = tasks.filter((t) => !t.parentId || !byId[t.parentId]);
+  const rows = [];
+  for (const p of tops) {
+    rows.push({ t: p, child: false });
+    for (const c of tasks.filter((x) => x.parentId === p.id)) rows.push({ t: c, child: true });
+  }
+  const occMonths = (t) => {
+    const set = new Set();
+    if (t.freq === "none") return set;
+    for (let m = 1; m <= 12; m++) {
+      if (recurInMonth([t], year, m).length > 0) set.add(m);
+    }
+    return set;
+  };
+  return (
+    <div className="ann-print">
+      <div className="ann-print-page ann-prec">
+        <div className="ann-print-head">
+          <span className="ann-print-month">定期タスク一覧</span>
+          <span className="ann-print-year">{year}年</span>
+        </div>
+        <table className="ann-prec-table">
+          <thead>
+            <tr>
+              <th className="c-title">やること</th>
+              <th className="c-freq">周期</th>
+              {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
+                <th key={m} className="c-m">{m}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(({ t, child }) => {
+              const set = occMonths(t);
+              return (
+                <tr key={t.id} className={child ? "is-child" : ""}>
+                  <td className="c-title">
+                    {child ? "└ " : ""}
+                    {t.importance && `[${t.importance}] `}
+                    {t.title}
+                    {t.memo && <span className="c-memo">　{t.memo}</span>}
+                  </td>
+                  <td className="c-freq">{recurLabel(t)}</td>
+                  {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
+                    <td key={m} className="c-m">{set.has(m) ? "☐" : ""}</td>
+                  ))}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+        <p className="ann-prec-note">☐＝その月に発生。終わったらチェック。</p>
+      </div>
     </div>
   );
 }
